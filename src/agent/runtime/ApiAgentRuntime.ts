@@ -6,6 +6,28 @@ import {
   ShareArtifact,
 } from '../contracts';
 
+function toAbsoluteUrl(url: string): string {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    try {
+      return new URL(url, window.location.href).href;
+    } catch {
+      try {
+        const origin = window.location.origin;
+        if (origin && origin !== 'null') {
+          return `${origin.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return url;
+}
+
 export class ApiAgentRuntime {
   async createSession(): Promise<{ sessionId: string; taskId: string; task: AgentTask }> {
     const response = await fetch('/api/v1/sessions', {
@@ -52,6 +74,130 @@ export class ApiAgentRuntime {
     return response.json();
   }
 
+  private listenToStreamOrPoll(params: {
+    streamUrl: string;
+    turnId: string;
+    sessionId?: string;
+    onEvent: (event: AgentEvent) => void;
+  }): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let isSettled = false;
+      let seenEventCount = 0;
+      let source: EventSource | null = null;
+      let pollInterval: any = null;
+
+      const finishSuccess = () => {
+        if (isSettled) return;
+        isSettled = true;
+        if (pollInterval) clearInterval(pollInterval);
+        if (source) {
+          try {
+            source.close();
+          } catch {
+            // ignore
+          }
+        }
+        resolve();
+      };
+
+      const finishError = (err: Error) => {
+        if (isSettled) return;
+        isSettled = true;
+        if (pollInterval) clearInterval(pollInterval);
+        if (source) {
+          try {
+            source.close();
+          } catch {
+            // ignore
+          }
+        }
+        reject(err);
+      };
+
+      // Fallback polling mechanism if EventSource fails or is blocked
+      const startPolling = () => {
+        if (pollInterval || isSettled) return;
+        const eventsUrl = params.sessionId
+          ? `/api/v1/sessions/${params.sessionId}/turns/${params.turnId}/events`
+          : `/api/v1/turns/${params.turnId}/events`;
+
+        let pollCount = 0;
+        pollInterval = setInterval(async () => {
+          if (isSettled) return;
+          pollCount++;
+          try {
+            const res = await fetch(eventsUrl);
+            if (res.ok) {
+              const data = await res.json();
+              const events: AgentEvent[] = data.events || [];
+              if (events.length > seenEventCount) {
+                const newEvents = events.slice(seenEventCount);
+                seenEventCount = events.length;
+                for (const ev of newEvents) {
+                  params.onEvent(ev);
+                  if (ev.type === 'turn.completed') {
+                    finishSuccess();
+                    return;
+                  }
+                  if (ev.type === 'turn.failed') {
+                    finishError(new Error(ev.message || 'Turn execution failed'));
+                    return;
+                  }
+                }
+              }
+            }
+          } catch {
+            // ignore polling errors
+          }
+
+          if (pollCount > 100) {
+            // Safety timeout after 25s
+            finishSuccess();
+          }
+        }, 250);
+      };
+
+      // Try EventSource with absolute URL
+      try {
+        const fullUrl = toAbsoluteUrl(params.streamUrl);
+        source = new EventSource(fullUrl);
+
+        source.onmessage = (message) => {
+          try {
+            const event = JSON.parse(message.data) as AgentEvent;
+            seenEventCount++;
+            params.onEvent(event);
+
+            if (event.type === 'turn.completed') {
+              finishSuccess();
+            } else if (event.type === 'turn.failed') {
+              finishError(new Error(event.message || 'Turn execution failed'));
+            }
+          } catch (err) {
+            console.error('Failed to parse SSE message:', err);
+          }
+        };
+
+        source.onerror = (err) => {
+          if (source) {
+            try {
+              source.close();
+            } catch {
+              // ignore
+            }
+          }
+          // Start polling fallback if not settled
+          if (!isSettled) {
+            startPolling();
+          }
+        };
+      } catch (err) {
+        console.warn('EventSource initialization error, using polling fallback:', err);
+        startPolling();
+      }
+    });
+  }
+
   async submitTurn(params: {
     sessionId: string;
     text: string;
@@ -76,38 +222,13 @@ export class ApiAgentRuntime {
       throw new Error('Failed to submit turn');
     }
 
-    const { streamUrl } = await response.json();
+    const { turnId, streamUrl } = await response.json();
 
-    return new Promise<void>((resolve, reject) => {
-      const source = new EventSource(streamUrl);
-
-      source.onmessage = (message) => {
-        try {
-          const event = JSON.parse(message.data) as AgentEvent;
-          params.onEvent(event);
-
-          if (
-            event.type === 'turn.completed' ||
-            event.type === 'turn.failed'
-          ) {
-            source.close();
-            if (event.type === 'turn.completed') {
-              resolve();
-            } else {
-              reject(new Error(event.message || 'Turn execution failed'));
-            }
-          }
-        } catch (err) {
-          console.error('Failed to parse SSE message:', err);
-        }
-      };
-
-      source.onerror = (err) => {
-        source.close();
-        console.warn('SSE stream closed or encountered error:', err);
-        // If the turn had already yielded events, resolve cleanly
-        resolve();
-      };
+    return this.listenToStreamOrPoll({
+      streamUrl,
+      turnId,
+      sessionId: params.sessionId,
+      onEvent: params.onEvent,
     });
   }
 
@@ -131,36 +252,13 @@ export class ApiAgentRuntime {
     const data = await response.json();
 
     // If streamUrl is provided for action execution
-    if (data.streamUrl) {
-      return new Promise<any>((resolve, reject) => {
-        const source = new EventSource(data.streamUrl);
-
-        source.onmessage = (message) => {
-          try {
-            const event = JSON.parse(message.data) as AgentEvent;
-            params.onEvent(event);
-
-            if (
-              event.type === 'turn.completed' ||
-              event.type === 'turn.failed'
-            ) {
-              source.close();
-              if (event.type === 'turn.completed') {
-                resolve(data);
-              } else {
-                reject(new Error(event.message || 'Action failed'));
-              }
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        };
-
-        source.onerror = () => {
-          source.close();
-          resolve(data);
-        };
+    if (data.streamUrl && data.turnId) {
+      await this.listenToStreamOrPoll({
+        streamUrl: data.streamUrl,
+        turnId: data.turnId,
+        onEvent: params.onEvent,
       });
+      return data;
     }
 
     // Direct events returned in action response

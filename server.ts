@@ -129,6 +129,19 @@ async function startServer() {
     eventHub.subscribe(turnId, res);
   });
 
+  // JSON Events endpoint for fallback polling
+  app.get('/api/v1/sessions/:sessionId/turns/:turnId/events', (req, res) => {
+    const { turnId } = req.params;
+    const events = eventHub.getEvents(turnId);
+    res.json({ events });
+  });
+
+  app.get('/api/v1/turns/:turnId/events', (req, res) => {
+    const { turnId } = req.params;
+    const events = eventHub.getEvents(turnId);
+    res.json({ events });
+  });
+
   // Task Actions (Interactions like selecting metric, confirming schedule, creating share)
   app.post('/api/v1/tasks/:taskId/actions', async (req, res) => {
     const { taskId } = req.params;
