@@ -1,26 +1,37 @@
-import React, { useState } from 'react';
-import { SelectableBlock } from '../../types';
-import { DEFAULT_SHAREABLE_BLOCKS } from '../../data/mockData';
+import React, { useState, useMemo } from 'react';
+import { AgentBlock } from '../../agent/contracts';
+import { convertBlocksToSelectable } from '../../agent/utils/shareUtils';
 import { Check, Share2, ShieldCheck, FileText, BarChart2, Layers, Calendar, X } from 'lucide-react';
 
 interface Page07Props {
-  onGenerateShareLink: (selectedCount: number) => void;
+  availableBlocks?: AgentBlock[];
+  onGenerateShareLink: (selectedCount: number, selectedBlockIds?: string[]) => void;
   onCancel: () => void;
 }
 
 export const Page07ShareSelect: React.FC<Page07Props> = ({
+  availableBlocks,
   onGenerateShareLink,
   onCancel,
 }) => {
-  const [blocks, setBlocks] = useState<SelectableBlock[]>(DEFAULT_SHAREABLE_BLOCKS);
+  const initialBlocks = useMemo(() => {
+    return convertBlocksToSelectable(availableBlocks).items;
+  }, [availableBlocks]);
+
+  const [blocks, setBlocks] = useState(initialBlocks);
 
   const toggleBlock = (id: string) => {
     setBlocks((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, selected: !b.selected } : b))
+      prev.map((b) => (b.id === id ? { ...b, selected: !b.selected } : b)),
     );
   };
 
   const selectedCount = blocks.filter((b) => b.selected).length;
+
+  const handleGenerate = () => {
+    const selectedIds = blocks.filter((b) => b.selected).map((b) => b.id);
+    onGenerateShareLink(selectedCount, selectedIds);
+  };
 
   const getIconForType = (type: string) => {
     switch (type) {
@@ -102,7 +113,9 @@ export const Page07ShareSelect: React.FC<Page07Props> = ({
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white border border-slate-800 px-6 py-3 rounded-full shadow-2xl flex items-center gap-6">
         <div className="flex items-center gap-2 text-xs font-semibold">
           <ShieldCheck className="w-4 h-4 text-blue-400" />
-          <span>已选择 <strong className="text-blue-400 font-mono text-sm">{selectedCount}</strong> 项分析内容</span>
+          <span>
+            已选择 <strong className="text-blue-400 font-mono text-sm">{selectedCount}</strong> 项分析内容
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -114,8 +127,9 @@ export const Page07ShareSelect: React.FC<Page07Props> = ({
           </button>
 
           <button
-            onClick={() => onGenerateShareLink(selectedCount)}
-            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-5 py-2 rounded-full flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+            onClick={handleGenerate}
+            disabled={selectedCount === 0}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-5 py-2 rounded-full flex items-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-50"
           >
             <Share2 className="w-3.5 h-3.5" />
             <span>生成分享链接</span>

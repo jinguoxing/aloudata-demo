@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Turn } from '../../agent/contracts';
+import { Turn, AgentBlock } from '../../agent/contracts';
 import { BlockRenderer } from './BlockRenderer';
 import { User, Sparkles, FileSpreadsheet, ArrowRight } from 'lucide-react';
 
@@ -12,7 +12,8 @@ interface AgentThreadProps {
   onOpenTrace?: () => void;
   onOpenReport?: (artifactId: string) => void;
   onConfirmSchedule?: () => void;
-  onCreateShare?: (blockIds: string[]) => Promise<any>;
+  onInitiateShare?: () => void;
+  onCreateShare?: (blockIds: string[], blocksToShare?: AgentBlock[]) => Promise<any>;
   onOpenReadOnlyView?: () => void;
   onQuickPrompt?: (prompt: string, attachment?: boolean) => void;
 }
@@ -26,11 +27,15 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
   onOpenTrace,
   onOpenReport,
   onConfirmSchedule,
+  onInitiateShare,
   onCreateShare,
   onOpenReadOnlyView,
   onQuickPrompt,
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Extract all meaningful blocks across turns to serve as shareable candidates
+  const allBlocks = turns.flatMap((t) => t.blocks);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -139,19 +144,21 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
               </div>
             )}
 
-            {/* Assistant Turn Blocks */}
-            {turn.role === 'assistant' && (
+            {/* Agent response blocks belonging to this turn */}
+            {turn.blocks.length > 0 && (
               <div className="space-y-3.5 animate-in fade-in duration-200">
                 {turn.blocks.map((block) => (
                   <div key={block.blockId}>
                     <BlockRenderer
                       block={block}
+                      availableBlocks={allBlocks}
                       onSelectMetric={onSelectMetric}
                       onOpenMetricContext={onOpenMetricContext}
                       onFollowUpDiagnosis={onFollowUpDiagnosis}
                       onOpenTrace={onOpenTrace}
                       onOpenReport={onOpenReport}
                       onConfirmSchedule={onConfirmSchedule}
+                      onInitiateShare={onInitiateShare}
                       onCreateShare={onCreateShare}
                       onOpenReadOnlyView={onOpenReadOnlyView}
                     />

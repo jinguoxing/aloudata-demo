@@ -1,14 +1,26 @@
 import type { Response } from 'express';
 import type { AgentEvent } from '../../src/agent/contracts';
+import { taskStore } from './taskStore';
 
 class EventHub {
   private history = new Map<string, AgentEvent[]>();
   private listeners = new Map<string, Set<Response>>();
+  private turnToTask = new Map<string, string>();
 
-  publish(turnId: string, event: AgentEvent) {
+  bindTurnToTask(turnId: string, taskId: string) {
+    this.turnToTask.set(turnId, taskId);
+  }
+
+  publish(turnId: string, event: AgentEvent, explicitTaskId?: string) {
     const events = this.history.get(turnId) ?? [];
     events.push(event);
     this.history.set(turnId, events);
+
+    // Sync authoritative Server Task state
+    const taskId = explicitTaskId || this.turnToTask.get(turnId);
+    if (taskId) {
+      taskStore.applyEvent(turnId, taskId, event);
+    }
 
     const listeners = this.listeners.get(turnId);
 

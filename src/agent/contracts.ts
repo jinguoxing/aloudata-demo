@@ -61,9 +61,15 @@ export interface TaskContext {
   businessObjects?: string[];
   resourceIds?: string[];
   attachmentIds?: string[];
+  attachedFiles?: AttachmentRef[];
+  hasAttachments?: boolean;
   selectedMetricOption?: 'on_time' | 'total';
   latestReportId?: string;
   latestExecutionId?: string;
+  scheduleConfig?: any;
+  shareArtifact?: ShareArtifact;
+  shareUrl?: string;
+  [key: string]: any;
 }
 
 export interface AgentTask {
@@ -144,6 +150,7 @@ export type TaskAction =
       actionType: 'CREATE_SHARE';
       payload: {
         blockIds: string[];
+        blocks?: AgentBlock[];
       };
     };
 

@@ -1,6 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 import crypto from 'node:crypto';
 import { eventHub } from './eventHub';
+import { taskStore } from './taskStore';
+import { fileStore } from './fileStore';
 import { semovix } from '../services/mockSemovix';
 import { AgentTask, TaskAction, AgentEvent } from '../../src/agent/contracts';
 
@@ -258,10 +260,49 @@ export async function handleFileAnalysis(
     },
   });
 
-  const fileName =
-    attachments[0]?.fileName || 'focus_case_list_2026W32.csv';
+  const attachment = attachments[0];
+  const fileRecord = attachment?.attachmentId
+    ? fileStore.getFile(attachment.attachmentId)
+    : undefined;
 
-  // 1. File Semantic Binding
+  const fileName =
+    fileRecord?.fileName || attachment?.fileName || 'focus_case_list_2026W32.csv';
+
+  const sizeNumber = fileRecord?.size || attachment?.size || 967372;
+  const fileSizeText =
+    sizeNumber > 1024 * 1024
+      ? `${(sizeNumber / (1024 * 1024)).toFixed(1)} MB`
+      : `${(sizeNumber / 1024).toFixed(1)} KB`;
+
+  const rowCount = fileRecord?.rowCount || 4094;
+  const columns = fileRecord?.columnNames || [
+    'case_id',
+    'street_code',
+    'appeal_category',
+    'is_overdue',
+    'duration_days',
+  ];
+
+  // Dynamic semantic bindings based on columns detected
+  const bindings = [
+    {
+      sourceColumn: columns[0] || 'case_id',
+      mappedConcept: '工单标识 (Service Case ID)',
+      description: '主键映射，与认证服务工单数据建立主键级比对',
+    },
+    {
+      sourceColumn: columns[1] || 'street_code',
+      mappedConcept: '街镇编码 / 区域维度 (Street / Area Code)',
+      description: '空间维度映射至闵行区行政区划，校核下辖街镇分布',
+    },
+    {
+      sourceColumn: columns[2] || 'appeal_category',
+      mappedConcept: '诉求分类 (Category / Sub-category)',
+      description: '业务标签映射，用于物业、劳动保障细分交叉分析',
+    },
+  ];
+
+  // 1. File Semantic Binding Block
   eventHub.publish(turnId, {
     type: 'block.created',
     turnId,
@@ -271,21 +312,11 @@ export async function handleFileAnalysis(
       status: 'DONE',
       payload: {
         fileName,
-        fileSizeText: '944.7 KB',
-        bindings: [
-          {
-            sourceColumn: 'case_id',
-            mappedConcept: '工单标识 (Service Case ID)',
-            description: '主键映射，与认证服务工单数据建立链接',
-          },
-          {
-            sourceColumn: 'street_code',
-            mappedConcept: '街镇编码 (Street Code)',
-            description: '地理维度映射至区级行政区划',
-          },
-        ],
+        fileSizeText,
+        bindings,
         summary:
-          '已通过元数据语义识别并建立字段映射，支持临时数据与企业正式数据协同计算。',
+          fileRecord?.summary ||
+          `已通过元数据语义识别并建立字段映射，成功解析 ${rowCount.toLocaleString()} 行工单数据，支持临时数据与企业正式数据协同计算。`,
       },
       createdAt: new Date().toISOString(),
     },
@@ -317,7 +348,11 @@ export async function handleFileAnalysis(
       payload: {
         headline: '重点关注工单确实放大了本周办结率下降',
         stats: [
-          { label: '重点清单工单数', value: '4,094 件', theme: 'neutral' },
+          {
+            label: '重点清单工单数',
+            value: `${rowCount.toLocaleString()} 件`,
+            theme: 'neutral',
+          },
           {
             label: '重点工单超期率',
             value: '22.4%',

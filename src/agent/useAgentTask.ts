@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   AgentTask,
   AgentEvent,
+  AgentBlock,
   AttachmentRef,
   TaskAction,
   ShareArtifact,
@@ -50,11 +51,42 @@ export function useAgentTask() {
     }
   }, []);
 
-  // Initialize session on mount
-  const initSession = useCallback(async () => {
+  // Initialize session on mount (Hydrate from server if existing)
+  const initSession = useCallback(async (forceNew = false) => {
     try {
       setLoading(true);
+
+      const savedSessionId =
+        !forceNew && typeof window !== 'undefined'
+          ? sessionStorage.getItem('semovix_session_id')
+          : null;
+
+      if (savedSessionId) {
+        try {
+          const serverTask = await apiAgentRuntime.getTask(savedSessionId);
+          if (serverTask && serverTask.sessionId) {
+            setTask(serverTask);
+            taskRef.current = serverTask;
+            setIsInitialized(true);
+
+            // Restore any share artifact from context
+            if (serverTask.context?.shareArtifact) {
+              setActiveShareArtifact(serverTask.context.shareArtifact);
+            }
+
+            return;
+          }
+        } catch (fetchErr) {
+          console.warn('Could not rehydrate existing session, creating new:', fetchErr);
+        }
+      }
+
+      // Create new authoritative session on server
       const res = await apiAgentRuntime.createSession();
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('semovix_session_id', res.sessionId);
+      }
+
       setTask({
         ...INITIAL_TASK,
         sessionId: res.sessionId,
@@ -80,6 +112,13 @@ export function useAgentTask() {
 
   useEffect(() => {
     initSession();
+  }, [initSession]);
+
+  const resetSession = useCallback(async () => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('semovix_session_id');
+    }
+    await initSession(true);
   }, [initSession]);
 
   // Send a user prompt with optional file attachments
@@ -164,10 +203,24 @@ export function useAgentTask() {
   );
 
   const createShare = useCallback(
-    async (blockIds: string[]) => {
+    async (blockIds: string[], blocksToShare?: AgentBlock[]) => {
+      // Find all blocks from task if not directly supplied
+      const allTaskBlocks: AgentBlock[] = [];
+      taskRef.current.turns.forEach((t) => {
+        t.blocks.forEach((b) => allTaskBlocks.push(b));
+      });
+
+      const selectedBlocks =
+        blocksToShare && blocksToShare.length > 0
+          ? blocksToShare
+          : allTaskBlocks.filter((b) => blockIds.includes(b.blockId));
+
       const res = await performAction({
         actionType: 'CREATE_SHARE',
-        payload: { blockIds },
+        payload: {
+          blockIds,
+          blocks: selectedBlocks,
+        },
       });
       return res.share as ShareArtifact;
     },
@@ -193,6 +246,6 @@ export function useAgentTask() {
     confirmSchedule,
     createShare,
     triggerDiagnosis,
-    resetSession: initSession,
+    resetSession,
   };
 }

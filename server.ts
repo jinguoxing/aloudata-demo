@@ -2,20 +2,27 @@ import express from 'express';
 import path from 'path';
 import crypto from 'node:crypto';
 import dotenv from 'dotenv';
+import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import { eventHub } from './server/agent/eventHub';
+import { taskStore } from './server/agent/taskStore';
+import { fileStore } from './server/agent/fileStore';
 import {
   runTurn,
   handleMetricQueryExecute,
   handleScheduleConfirmAction,
 } from './server/agent/orchestrator';
 import { semovix } from './server/services/mockSemovix';
-import { AgentTask } from './src/agent/contracts';
 
 dotenv.config();
 
-// Memory task store for active sessions
-const sessions = new Map<string, { sessionId: string; taskId: string; task: AgentTask }>();
+// Multer in-memory storage for real file processing
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024, // 25MB
+  },
+});
 
 async function startServer() {
   const app = express();
@@ -34,34 +41,30 @@ async function startServer() {
 
   // Create new session & task
   app.post('/api/v1/sessions', (_req, res) => {
-    const sessionId = `sess_${crypto.randomUUID().substring(0, 8)}`;
-    const taskId = `task_${crypto.randomUUID().substring(0, 8)}`;
-
-    const initialTask: AgentTask = {
-      sessionId,
-      taskId,
-      title: '公共服务热线工单按期办结率分析',
-      status: 'OPEN',
-      stage: 'ASK_DATA',
-      context: {
-        region: '上海市闵行区',
-        metricName: '按期办结率',
-      },
-      turns: [],
-      artifactIds: [],
-    };
-
-    sessions.set(sessionId, { sessionId, taskId, task: initialTask });
-    res.json({ sessionId, taskId, task: initialTask });
+    const session = taskStore.createSession();
+    res.json({
+      sessionId: session.sessionId,
+      taskId: session.taskId,
+      task: session.task,
+    });
   });
 
-  // Get session task
+  // Get session task (Authoritative Server State)
   app.get('/api/v1/sessions/:sessionId/task', (req, res) => {
-    const session = sessions.get(req.params.sessionId);
-    if (!session) {
+    const task = taskStore.getTaskBySessionId(req.params.sessionId);
+    if (!task) {
       return res.status(404).json({ error: 'Session not found' });
     }
-    res.json(session.task);
+    res.json(task);
+  });
+
+  // Get task by taskId
+  app.get('/api/v1/tasks/:taskId', (req, res) => {
+    const task = taskStore.getTaskByTaskId(req.params.taskId);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    res.json(task);
   });
 
   // Submit new turn
@@ -69,31 +72,36 @@ async function startServer() {
     const { sessionId } = req.params;
     const { text, attachments = [] } = req.body;
 
-    let session = sessions.get(sessionId);
-    if (!session) {
-      const taskId = `task_${crypto.randomUUID().substring(0, 8)}`;
-      const task: AgentTask = {
-        sessionId,
-        taskId,
-        title: '公共服务热线工单按期办结率分析',
-        status: 'OPEN',
-        stage: 'ASK_DATA',
-        context: { region: '上海市闵行区' },
-        turns: [],
-        artifactIds: [],
-      };
-      session = { sessionId, taskId, task };
-      sessions.set(sessionId, session);
-    }
-
+    const session = taskStore.ensureSession(sessionId);
     const turnId = `turn_${crypto.randomUUID().substring(0, 8)}`;
     const streamUrl = `/api/v1/sessions/${sessionId}/turns/${turnId}/stream`;
+
+    // Bind turn to task in EventHub for real-time task state synchronization
+    eventHub.bindTurnToTask(turnId, session.taskId);
+
+    // Record user turn immediately in the server task store
+    taskStore.recordUserTurn(sessionId, {
+      turnId,
+      role: 'user',
+      text: text || '',
+      attachments,
+      blocks: [],
+      createdAt: new Date().toISOString(),
+    });
+
+    // If attachments present, bind them into server task context
+    if (attachments.length > 0) {
+      taskStore.updateTaskContext(session.taskId, {
+        attachedFiles: attachments,
+        hasAttachments: true,
+      });
+    }
 
     // Asynchronously orchestrate agent response
     setTimeout(() => {
       runTurn({
         turnId,
-        taskId: session!.taskId,
+        taskId: session.taskId,
         text: text || '',
         attachments,
       }).catch((err) => {
@@ -104,7 +112,7 @@ async function startServer() {
           message: err.message || 'Execution failed',
         });
       });
-    }, 100);
+    }, 80);
 
     res.json({ turnId, streamUrl });
   });
@@ -127,6 +135,9 @@ async function startServer() {
     const action = req.body;
     const turnId = `turn_act_${crypto.randomUUID().substring(0, 8)}`;
 
+    // Bind action turn to task for server task synchronization
+    eventHub.bindTurnToTask(turnId, taskId);
+
     switch (action.actionType) {
       case 'SELECT_METRIC': {
         const metricId = action.payload?.metricId || 'metric_on_time_rate';
@@ -144,11 +155,19 @@ async function startServer() {
 
       case 'CREATE_SHARE': {
         const blockIds = action.payload?.blockIds || [];
+        const blocks = action.payload?.blocks || [];
         const share = await semovix.createShareArtifact({
           taskId,
           selectedBlockIds: blockIds,
-          blocks: [],
+          blocks,
         });
+
+        // Record share artifact in task context on server
+        taskStore.updateTaskContext(taskId, {
+          shareArtifact: share,
+          shareUrl: share.url,
+        });
+
         return res.json({ success: true, share });
       }
 
@@ -157,17 +176,50 @@ async function startServer() {
     }
   });
 
-  // File Upload endpoint (CSV / Excel)
-  app.post('/api/v1/files', (req, res) => {
-    // In demo environment, generate attachment ref
-    const attachmentId = `att_${Date.now()}`;
-    const fileName = req.body?.fileName || 'focus_case_list_2026W32.csv';
-    res.json({
-      attachmentId,
-      fileName,
-      mimeType: 'text/csv',
-      size: 967372,
-    });
+  // File Upload endpoint (Supports both multipart FormData and JSON demo payload)
+  app.post('/api/v1/files', upload.single('file'), (req, res) => {
+    try {
+      if (req.file) {
+        // Real multipart file parsed by multer
+        const saved = fileStore.saveFile({
+          fileName: req.file.originalname,
+          mimeType: req.file.mimetype || 'text/csv',
+          size: req.file.size,
+          buffer: req.file.buffer,
+        });
+
+        return res.json({
+          attachmentId: saved.attachmentId,
+          fileName: saved.fileName,
+          mimeType: saved.mimeType,
+          size: saved.size,
+          rowCount: saved.rowCount,
+          columns: saved.columnNames,
+          summary: saved.summary,
+        });
+      }
+
+      // Fallback for JSON body (e.g. quick demo CSV loader)
+      const fileName = req.body?.fileName || 'focus_case_list_2026W32.csv';
+      const saved = fileStore.saveFile({
+        fileName,
+        mimeType: 'text/csv',
+        size: 967372,
+      });
+
+      res.json({
+        attachmentId: saved.attachmentId,
+        fileName: saved.fileName,
+        mimeType: saved.mimeType,
+        size: saved.size,
+        rowCount: saved.rowCount,
+        columns: saved.columnNames,
+        summary: saved.summary,
+      });
+    } catch (err: any) {
+      console.error('File upload error:', err);
+      res.status(500).json({ error: 'Failed to process file upload' });
+    }
   });
 
   // Share Artifact Retrieval

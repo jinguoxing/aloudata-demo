@@ -1,17 +1,24 @@
-import React, { useState } from 'react';
-import { Share2, Check, ExternalLink, Copy, CheckCheck } from 'lucide-react';
-import { DEFAULT_SHAREABLE_BLOCKS } from '../../../data/mockData';
+import React, { useState, useMemo } from 'react';
+import { Share2, Check, ExternalLink, Copy, CheckCheck, BarChart2, Layers, FileText, Calendar } from 'lucide-react';
+import { AgentBlock } from '../../../agent/contracts';
+import { convertBlocksToSelectable } from '../../../agent/utils/shareUtils';
 
 interface Props {
-  onCreateShare: (blockIds: string[]) => Promise<any>;
+  availableBlocks?: AgentBlock[];
+  onCreateShare: (blockIds: string[], blocksToShare?: AgentBlock[]) => Promise<any>;
   onOpenReadOnlyView?: () => void;
 }
 
 export const ShareSelectionBlock: React.FC<Props> = ({
+  availableBlocks,
   onCreateShare,
   onOpenReadOnlyView,
 }) => {
-  const [items, setItems] = useState(DEFAULT_SHAREABLE_BLOCKS);
+  const initialItems = useMemo(() => {
+    return convertBlocksToSelectable(availableBlocks).items;
+  }, [availableBlocks]);
+
+  const [items, setItems] = useState(initialItems);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -27,8 +34,13 @@ export const ShareSelectionBlock: React.FC<Props> = ({
   const handleGenerate = async () => {
     setLoading(true);
     try {
-      const selectedIds = items.filter((i) => i.selected).map((i) => i.id);
-      const res = await onCreateShare(selectedIds);
+      const selected = items.filter((i) => i.selected);
+      const selectedIds = selected.map((i) => i.id);
+      const selectedBlocks = selected
+        .map((i) => i.originalBlock)
+        .filter((b): b is AgentBlock => !!b);
+
+      const res = await onCreateShare(selectedIds, selectedBlocks);
       if (res?.url) {
         setCreatedUrl(res.url);
       } else {
@@ -48,6 +60,21 @@ export const ShareSelectionBlock: React.FC<Props> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const getIconForType = (type: string) => {
+    switch (type) {
+      case 'Metric Answer':
+        return <BarChart2 className="w-4 h-4 text-blue-600" />;
+      case 'Diagnostic Analysis':
+        return <Layers className="w-4 h-4 text-amber-600" />;
+      case 'Enriched Analysis':
+        return <BarChart2 className="w-4 h-4 text-emerald-600" />;
+      case 'Artifact File':
+        return <FileText className="w-4 h-4 text-blue-600" />;
+      default:
+        return <Calendar className="w-4 h-4 text-slate-500" />;
+    }
+  };
+
   return (
     <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4">
       {/* Title */}
@@ -64,7 +91,7 @@ export const ShareSelectionBlock: React.FC<Props> = ({
       </div>
 
       <p className="text-xs text-slate-600">
-        勾选需要导出的关键分析结论与产物，系统将生成整洁的只读报告页，过滤掉中间过程与草稿对话。
+        系统已根据本轮任务的实际分析产物建立精选清单。勾选需要导出的结论，将生成专属只读展示页，过滤掉中间执行细节。
       </p>
 
       {/* Selectable Items */}
@@ -91,10 +118,13 @@ export const ShareSelectionBlock: React.FC<Props> = ({
 
             <div className="space-y-1 flex-1 min-w-0">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-900 text-xs truncate">
-                  {item.title}
-                </span>
-                <span className="bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded font-mono">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {getIconForType(item.type)}
+                  <span className="font-semibold text-slate-900 text-xs truncate">
+                    {item.title}
+                  </span>
+                </div>
+                <span className="bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded font-mono shrink-0 ml-2">
                   {item.type}
                 </span>
               </div>
@@ -143,7 +173,7 @@ export const ShareSelectionBlock: React.FC<Props> = ({
           <button
             disabled={loading || items.filter((i) => i.selected).length === 0}
             onClick={handleGenerate}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
           >
             <Share2 className="w-3.5 h-3.5" />
             <span>{loading ? '正在生成...' : '生成精选分享链接'}</span>

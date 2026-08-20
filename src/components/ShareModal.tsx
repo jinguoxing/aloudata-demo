@@ -5,6 +5,7 @@ interface ShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedCount: number;
+  shareUrl?: string;
   onOpenReadOnlyView: () => void;
 }
 
@@ -12,10 +13,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   isOpen,
   onClose,
   selectedCount,
+  shareUrl: customShareUrl,
   onOpenReadOnlyView,
 }) => {
   const [copied, setCopied] = useState(false);
-  const shareUrl = 'https://semovix.ai/share/s_8f3a9d2c91e4';
+  const shareUrl =
+    customShareUrl ||
+    (typeof window !== 'undefined'
+      ? `${window.location.origin}/share/s_8f3a9d2c91e4`
+      : 'https://semovix.ai/share/s_8f3a9d2c91e4');
 
   if (!isOpen) return null;
 

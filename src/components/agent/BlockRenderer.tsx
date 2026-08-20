@@ -16,24 +16,28 @@ import { ErrorNoticeBlock } from './blocks/ErrorNoticeBlock';
 
 interface BlockRendererProps {
   block: AgentBlock;
+  availableBlocks?: AgentBlock[];
   onSelectMetric?: (metricId: string) => void;
   onOpenMetricContext?: () => void;
   onFollowUpDiagnosis?: () => void;
   onOpenTrace?: () => void;
   onOpenReport?: (artifactId: string) => void;
   onConfirmSchedule?: () => void;
-  onCreateShare?: (blockIds: string[]) => Promise<any>;
+  onInitiateShare?: () => void;
+  onCreateShare?: (blockIds: string[], blocksToShare?: AgentBlock[]) => Promise<any>;
   onOpenReadOnlyView?: () => void;
 }
 
 export const BlockRenderer: React.FC<BlockRendererProps> = ({
   block,
+  availableBlocks,
   onSelectMetric,
   onOpenMetricContext,
   onFollowUpDiagnosis,
   onOpenTrace,
   onOpenReport,
   onConfirmSchedule,
+  onInitiateShare,
   onCreateShare,
   onOpenReadOnlyView,
 }) => {
@@ -95,17 +99,14 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       return (
         <ScheduleCreatedBlock
           payload={block.payload}
-          onInitiateShare={
-            onFollowUpDiagnosis
-              ? () => onFollowUpDiagnosis()
-              : undefined
-          }
+          onInitiateShare={onInitiateShare}
         />
       );
 
     case 'share_selection':
       return (
         <ShareSelectionBlock
+          availableBlocks={availableBlocks}
           onCreateShare={onCreateShare || (async () => ({}))}
           onOpenReadOnlyView={onOpenReadOnlyView}
         />

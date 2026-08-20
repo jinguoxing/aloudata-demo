@@ -238,7 +238,7 @@ overall_overdue_rate = (
       taskId: params.taskId,
       title: params.title || '公共服务热线按期办结率变化分析 · 精选结果',
       selectedBlockIds: params.selectedBlockIds,
-      blocks: params.blocks,
+      blocks: params.blocks || [],
       createdAt: new Date().toISOString(),
       accessMode: 'READ_ONLY',
       url: `/share/${shareId}`,

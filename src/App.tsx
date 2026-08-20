@@ -28,12 +28,14 @@ export default function App() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareSelectedCount, setShareSelectedCount] = useState(4);
+  const [customShareUrl, setCustomShareUrl] = useState<string | undefined>(undefined);
 
   // Real Agent Task Runtime Hook
   const {
     task,
     loading,
     activeTraceExecution,
+    activeShareArtifact,
     sendMessage,
     selectMetric,
     confirmSchedule,
@@ -41,6 +43,9 @@ export default function App() {
     triggerDiagnosis,
     resetSession,
   } = useAgentTask();
+
+  // Flatten all task blocks
+  const allTaskBlocks = task.turns.flatMap((t) => t.blocks);
 
   const pageSequence: PageState[] = [
     'page01',
@@ -146,8 +151,14 @@ export default function App() {
                 onOpenTrace={() => setActiveRightPanel('python')}
                 onOpenReport={() => setIsReportModalOpen(true)}
                 onConfirmSchedule={() => confirmSchedule()}
-                onCreateShare={async (blockIds) => {
-                  const share = await createShare(blockIds);
+                onInitiateShare={() => {
+                  sendMessage('生成精选分析分享链接');
+                }}
+                onCreateShare={async (blockIds, blocksToShare) => {
+                  const share = await createShare(blockIds, blocksToShare);
+                  if (share?.url) {
+                    setCustomShareUrl(`${window.location.origin}${share.url}`);
+                  }
                   return share;
                 }}
                 onOpenReadOnlyView={() => handleNavigateTo('page08')}
@@ -215,8 +226,15 @@ export default function App() {
 
               {currentPage === 'page07' && (
                 <Page07ShareSelect
-                  onGenerateShareLink={(count) => {
+                  availableBlocks={allTaskBlocks}
+                  onGenerateShareLink={async (count, selectedBlockIds) => {
                     setShareSelectedCount(count);
+                    if (selectedBlockIds && selectedBlockIds.length > 0) {
+                      const share = await createShare(selectedBlockIds);
+                      if (share?.url) {
+                        setCustomShareUrl(`${window.location.origin}${share.url}`);
+                      }
+                    }
                     setIsShareModalOpen(true);
                   }}
                   onCancel={() => handleNavigateTo('page06')}
@@ -225,6 +243,8 @@ export default function App() {
 
               {currentPage === 'page08' && (
                 <Page08ReadOnly
+                  shareArtifact={activeShareArtifact}
+                  taskBlocks={allTaskBlocks}
                   onOpenReportModal={() => setIsReportModalOpen(true)}
                   onReturnToWorkbench={() => handleNavigateTo('page06')}
                 />
@@ -259,6 +279,7 @@ export default function App() {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         selectedCount={shareSelectedCount}
+        shareUrl={customShareUrl}
         onOpenReadOnlyView={() => {
           setIsShareModalOpen(false);
           handleNavigateTo('page08');
