@@ -260,6 +260,9 @@ export interface MetricAnswerPayload {
   metricName: string;
   headlineValue: string;
   headlineHighlight: string;
+  periodLabel?: string;
+  scopeLabel?: string;
+  comparisonText?: string;
   table: MetricTableRow[];
   summaryNote: string;
   metricId: string;

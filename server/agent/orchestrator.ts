@@ -141,9 +141,15 @@ export async function modelRoute(
 export async function handleMetricDisambiguation(turnId: string, taskId: string) {
   const candidates = await semovix.resolveMetrics('按期办结率');
   const recommendedMetric = candidates.find((c) => c.isRecommended) || candidates[0];
+  const blockId = `blk_${crypto.randomUUID().substring(0, 8)}`;
 
   taskStore.updateTaskContext(taskId, {
     recommendedMetricId: recommendedMetric?.id,
+    pendingDecision: {
+      type: 'METRIC_RESOLUTION',
+      turnId,
+      blockId,
+    },
   });
 
   eventHub.publish(turnId, {
@@ -154,6 +160,11 @@ export async function handleMetricDisambiguation(turnId: string, taskId: string)
       title: '公共服务热线工单按期办结率分析',
       context: {
         recommendedMetricId: recommendedMetric?.id,
+        pendingDecision: {
+          type: 'METRIC_RESOLUTION',
+          turnId,
+          blockId,
+        },
       },
     },
   });
@@ -162,7 +173,7 @@ export async function handleMetricDisambiguation(turnId: string, taskId: string)
     type: 'decision.required',
     turnId,
     block: {
-      blockId: `blk_${crypto.randomUUID().substring(0, 8)}`,
+      blockId,
       type: 'metric_disambiguation',
       status: 'PENDING',
       payload: {
@@ -205,6 +216,27 @@ export async function handleMetricQueryExecute(
     '上周 (2026W32)';
   const compareType = options?.compareType || (typeof task?.context?.compareType === 'string' ? task.context.compareType : 'wow');
 
+  // If there was a pending metric disambiguation decision, resolve and freeze it
+  const pending = task?.context?.pendingDecision;
+  if (pending?.type === 'METRIC_RESOLUTION' && pending.blockId && pending.turnId) {
+    const existingBlock = taskStore.getBlock(taskId, pending.turnId, pending.blockId);
+    if (existingBlock) {
+      eventHub.publish(pending.turnId, {
+        type: 'block.updated',
+        turnId: pending.turnId,
+        blockId: pending.blockId,
+        patch: {
+          status: 'DONE',
+          payload: {
+            ...existingBlock.payload,
+            selectedMetricId: metricId,
+            resolutionStatus: 'RESOLVED',
+          },
+        },
+      });
+    }
+  }
+
   const queryResult = await semovix.queryMetric(metricId, {
     region,
     timeRange,
@@ -222,6 +254,7 @@ export async function handleMetricQueryExecute(
     compareType,
     metricDefinition: metricDef,
     metricSnapshot: queryResult,
+    pendingDecision: undefined,
   });
 
   eventHub.publish(turnId, {
@@ -238,9 +271,20 @@ export async function handleMetricQueryExecute(
         compareType,
         metricDefinition: metricDef,
         metricSnapshot: queryResult,
+        pendingDecision: undefined,
       },
     },
   });
+
+  const periodLabel =
+    (typeof timeRange === 'string' ? timeRange : (timeRange as any)?.label) || '上周';
+  const scopeLabel =
+    region ||
+    (typeof task?.context?.scope === 'string'
+      ? task.context.scope
+      : task?.context?.scope?.streetTown || task?.context?.scope?.region) ||
+    '当前业务范围';
+  const comparisonText = queryResult.table?.[0]?.wow ? `较上期 ${queryResult.table[0].wow}` : '';
 
   eventHub.publish(turnId, {
     type: 'block.created',
@@ -253,6 +297,9 @@ export async function handleMetricQueryExecute(
         metricName: queryResult.metricName,
         headlineValue: queryResult.headlineValue,
         headlineHighlight: queryResult.headlineHighlight,
+        periodLabel,
+        scopeLabel,
+        comparisonText,
         table: queryResult.table,
         summaryNote: queryResult.summaryNote,
         metricId: queryResult.metricId,

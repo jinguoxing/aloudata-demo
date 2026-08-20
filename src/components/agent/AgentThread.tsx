@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Turn, AgentBlock, AgentTask } from '../../agent/contracts';
-import { BlockRenderer } from './BlockRenderer';
-import { User, Sparkles, FileSpreadsheet, ArrowRight, Compass } from 'lucide-react';
+import { ConversationTurn } from './ConversationTurn';
+import { Sparkles, ArrowRight } from 'lucide-react';
 import { getNextActions } from '../../agent/utils/nextActions';
 
 interface AgentThreadProps {
@@ -35,13 +35,30 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
   onOpenReadOnlyView,
   onQuickPrompt,
 }) => {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isNearBottom = useRef(true);
+  const [hasNewContent, setHasNewContent] = useState(false);
 
   // Extract all meaningful blocks across turns to serve as shareable candidates
   const allBlocks = turns.flatMap((t) => t.blocks);
 
+  const handleScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottom.current = distance < 100;
+    if (isNearBottom.current) {
+      setHasNewContent(false);
+    }
+  };
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isNearBottom.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      setHasNewContent(true);
+    }
   }, [turns, loading]);
 
   const currentTask: AgentTask = task || {
@@ -50,6 +67,10 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
     title: '公共服务热线工单按期办结率分析',
     status: 'OPEN',
     stage: 'ASK_DATA',
+    context: {
+      region: '上海市闵行区',
+      metricName: '按期办结率',
+    },
     turns,
     artifactIds: [],
   };
@@ -57,7 +78,11 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
   const nextActions = getNextActions(currentTask);
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+    <div
+      ref={scrollContainerRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 relative"
+    >
       {/* If empty, show welcome guide */}
       {turns.length === 0 && (
         <div className="max-w-3xl mx-auto space-y-6 py-6 animate-in fade-in duration-300">
@@ -100,83 +125,38 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
         </div>
       )}
 
-      {/* Render Turns */}
+      {/* Render Turns using ConversationTurn hierarchy */}
       <div className="max-w-3xl mx-auto space-y-6">
         {turns.map((turn) => (
-          <div key={turn.turnId} className="space-y-4">
-            {/* User Turn */}
-            {turn.role === 'user' && (
-              <div className="flex justify-end items-start gap-2.5">
-                <div className="max-w-[85%] space-y-2">
-                  {turn.attachments && turn.attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-2 justify-end">
-                      {turn.attachments.map((att) => (
-                        <div
-                          key={att.attachmentId}
-                          className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-2.5 py-1 rounded-lg shadow-xs"
-                        >
-                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="font-mono">{att.fileName}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {turn.text && (
-                    <div className="bg-slate-900 text-white px-4 py-2.5 rounded-2xl rounded-tr-xs text-xs sm:text-sm leading-relaxed shadow-sm font-normal">
-                      {turn.text}
-                    </div>
-                  )}
-                </div>
-
-                <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5 text-xs font-semibold">
-                  <User className="w-4 h-4" />
-                </div>
-              </div>
-            )}
-
-            {/* Agent response blocks belonging to this turn */}
-            {turn.blocks.length > 0 && (
-              <div className="space-y-3.5 animate-in fade-in duration-200">
-                {turn.blocks.map((block) => (
-                  <div key={block.blockId}>
-                    <BlockRenderer
-                      block={block}
-                      availableBlocks={allBlocks}
-                      onSelectMetric={onSelectMetric}
-                      onOpenMetricContext={onOpenMetricContext}
-                      onFollowUpDiagnosis={onFollowUpDiagnosis}
-                      onOpenTrace={onOpenTrace}
-                      onOpenReport={onOpenReport}
-                      onConfirmSchedule={onConfirmSchedule}
-                      onInitiateShare={onInitiateShare}
-                      onCreateShare={onCreateShare}
-                      onOpenReadOnlyView={onOpenReadOnlyView}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <ConversationTurn
+            key={turn.turnId}
+            turn={turn}
+            task={currentTask}
+            availableBlocks={allBlocks}
+            onSelectMetric={onSelectMetric}
+            onOpenMetricContext={onOpenMetricContext}
+            onFollowUpDiagnosis={onFollowUpDiagnosis}
+            onOpenTrace={onOpenTrace}
+            onOpenReport={onOpenReport}
+            onConfirmSchedule={onConfirmSchedule}
+            onInitiateShare={onInitiateShare}
+            onCreateShare={onCreateShare}
+            onOpenReadOnlyView={onOpenReadOnlyView}
+          />
         ))}
 
         {/* Suggest Next Actions chip bar if turns exist and not loading */}
         {turns.length > 0 && !loading && nextActions.length > 0 && (
-          <div className="pt-2 animate-in fade-in duration-300 space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-              <Compass className="w-3.5 h-3.5 text-blue-600" />
-              <span>推荐下一步动作</span>
-            </div>
+          <div className="space-y-2 pt-2 animate-in fade-in duration-200">
+            <span className="text-xs text-slate-400">你还可以继续：</span>
             <div className="flex flex-wrap gap-2">
-              {nextActions.slice(0, 3).map((act) => (
+              {nextActions.slice(0, 3).map((action) => (
                 <button
-                  key={act.id}
-                  onClick={() => onQuickPrompt?.(act.text, act.hasFile)}
-                  className="bg-white hover:bg-blue-50/60 border border-slate-200 hover:border-blue-300 text-slate-700 hover:text-blue-700 text-xs px-3 py-1.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer text-left"
+                  key={action.id}
+                  onClick={() => onQuickPrompt?.(action.text, action.hasFile)}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-blue-300 hover:text-blue-700 transition-colors cursor-pointer shadow-2xs"
                 >
-                  <span className="font-medium">{act.title}</span>
-                  <span className="text-slate-400 text-[11px]">· {act.text.length > 20 ? act.text.slice(0, 20) + '...' : act.text}</span>
-                  <ArrowRight className="w-3 h-3 text-blue-500 shrink-0" />
+                  {action.title}
                 </button>
               ))}
             </div>
@@ -186,12 +166,25 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
         {loading && (
           <div className="flex items-center gap-2 text-xs text-slate-500 py-2 bg-slate-50 border border-slate-200/60 rounded-xl px-4 w-fit">
             <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-            <span>Semovix Agent 正在执行意图解析与工具协同...</span>
+            <span>Semovix Agent 正在执行意图解析与分析推理...</span>
           </div>
         )}
 
         <div ref={bottomRef} />
       </div>
+
+      {/* Floating pill when new content arrived while user scrolled up */}
+      {hasNewContent && (
+        <button
+          onClick={() => {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+            setHasNewContent(false);
+          }}
+          className="sticky bottom-3 mx-auto flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 shadow-lg cursor-pointer hover:bg-slate-50 transition-all z-10 block"
+        >
+          ↓ 有新内容
+        </button>
+      )}
     </div>
   );
 };

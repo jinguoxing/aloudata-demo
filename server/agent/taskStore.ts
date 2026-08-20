@@ -107,6 +107,13 @@ class TaskStore {
       ...patch,
     };
   }
+
+  getBlock(taskId: string, turnId: string, blockId: string) {
+    const task = this.getTaskByTaskId(taskId);
+    return task?.turns
+      .find((turn) => turn.turnId === turnId)
+      ?.blocks.find((block) => block.blockId === blockId);
+  }
 }
 
 export const taskStore = new TaskStore();
