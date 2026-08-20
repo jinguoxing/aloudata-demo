@@ -1,13 +1,21 @@
 import React from 'react';
 import { OFFICIAL_METRIC, PYTHON_EXECUTION_CODE } from '../data/mockData';
+import { ToolExecutionPayload } from '../agent/contracts';
 import { X, ShieldCheck, Terminal, CheckCircle2, FileText, ExternalLink, Code } from 'lucide-react';
 
 interface ContextPanelProps {
   type: 'metric' | 'python' | null;
   onClose: () => void;
+  dynamicExecution?: ToolExecutionPayload | null;
+  metricName?: string;
 }
 
-export const ContextPanel: React.FC<ContextPanelProps> = ({ type, onClose }) => {
+export const ContextPanel: React.FC<ContextPanelProps> = ({
+  type,
+  onClose,
+  dynamicExecution,
+  metricName,
+}) => {
   if (!type) return null;
 
   return (
@@ -26,7 +34,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ type, onClose }) => 
         </div>
         <button
           onClick={onClose}
-          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
@@ -44,7 +52,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ type, onClose }) => 
                   {OFFICIAL_METRIC.status}
                 </span>
               </div>
-              <p className="text-lg font-bold text-slate-900">{OFFICIAL_METRIC.name}</p>
+              <p className="text-lg font-bold text-slate-900">{metricName || OFFICIAL_METRIC.name}</p>
 
               <div className="border-t border-slate-200 pt-2.5">
                 <span className="text-slate-400 block mb-1">业务定义</span>
@@ -106,7 +114,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ type, onClose }) => 
         {type === 'python' && (
           <div className="space-y-4 text-xs">
             <div className="text-slate-600">
-              用于本次临时上传 CSV (`focus_case_list_2026W32.csv`) 与企业正式服务工单数据的轻量统计计算。
+              用于本次临时上传 CSV 与企业正式服务工单数据的轻量统计计算。
             </div>
 
             {/* Code Block */}
@@ -118,7 +126,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ type, onClose }) => 
                 <span>Python 3.10</span>
               </div>
               <pre className="whitespace-pre leading-relaxed text-slate-300">
-                {PYTHON_EXECUTION_CODE}
+                {dynamicExecution?.code || PYTHON_EXECUTION_CODE}
               </pre>
             </div>
 
@@ -132,16 +140,26 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({ type, onClose }) => 
               </div>
 
               <div className="font-mono text-[11px] text-slate-700 bg-white p-2.5 rounded border border-slate-200 space-y-1">
-                <p className="text-slate-500">[INFO] Loading CSV focus_case_list_2026W32.csv...</p>
-                <p className="text-emerald-700 font-medium">✓ Matched rows: 4,094</p>
-                <p className="text-slate-800">Focus overdue rate: 22.4%</p>
-                <p className="text-slate-800">Overall overdue rate: 13.6%</p>
-                <p className="text-blue-700 font-medium">Overdue contribution: 31.8% of weekly delta</p>
+                {dynamicExecution?.logs && dynamicExecution.logs.length > 0 ? (
+                  dynamicExecution.logs.map((log, idx) => (
+                    <p key={idx} className={log.startsWith('✓') ? 'text-emerald-700 font-medium' : log.startsWith('[INFO]') ? 'text-slate-500' : 'text-slate-800'}>
+                      {log}
+                    </p>
+                  ))
+                ) : (
+                  <>
+                    <p className="text-slate-500">[INFO] Loading CSV focus_case_list_2026W32.csv...</p>
+                    <p className="text-emerald-700 font-medium">✓ Matched rows: 4,094</p>
+                    <p className="text-slate-800">Focus overdue rate: 22.4%</p>
+                    <p className="text-slate-800">Overall overdue rate: 13.6%</p>
+                    <p className="text-blue-700 font-medium">Overdue contribution: 31.8% of weekly delta</p>
+                  </>
+                )}
               </div>
             </div>
 
             <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
-              <strong>提示：</strong> 此处仅展示可审计的工具执行日志（Tool Trace），不包含隐藏的思维链或底层算力资源配置。
+              <strong>提示：</strong> 此处展示经过隔离审计的工具执行日志（Tool Trace）。
             </div>
           </div>
         )}

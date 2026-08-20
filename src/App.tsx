@@ -7,8 +7,10 @@ import { ContextPanel } from './components/ContextPanel';
 import { ReportModal } from './components/ReportModal';
 import { ShareModal } from './components/ShareModal';
 import { PresenterControl } from './components/PresenterControl';
+import { AgentThread } from './components/agent/AgentThread';
+import { useAgentTask } from './agent/useAgentTask';
 
-import { ContinuousChatFlow } from './components/pages/ContinuousChatFlow';
+// Keyframe legacy pages for presenter inspection
 import { Page01Ask } from './components/pages/Page01Ask';
 import { Page02Disambiguation } from './components/pages/Page02Disambiguation';
 import { Page03Diagnosis } from './components/pages/Page03Diagnosis';
@@ -27,7 +29,19 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareSelectedCount, setShareSelectedCount] = useState(4);
 
-  // Sequence of page states
+  // Real Agent Task Runtime Hook
+  const {
+    task,
+    loading,
+    activeTraceExecution,
+    sendMessage,
+    selectMetric,
+    confirmSchedule,
+    createShare,
+    triggerDiagnosis,
+    resetSession,
+  } = useAgentTask();
+
   const pageSequence: PageState[] = [
     'page01',
     'page02',
@@ -45,7 +59,6 @@ export default function App() {
       const nextPage = pageSequence[currentIndex + 1];
       setCurrentPage(nextPage);
 
-      // Automatically set right panel context for certain pages
       if (nextPage === 'page02') {
         setActiveRightPanel('metric');
       } else if (nextPage === 'page04') {
@@ -86,7 +99,12 @@ export default function App() {
       {/* Main Unified Header */}
       <Header
         currentPage={currentPage}
-        onNavigate={handleNavigateTo}
+        onNavigate={(page) => {
+          if (page === 'page01') {
+            resetSession();
+          }
+          handleNavigateTo(page);
+        }}
         showPresenterControl={showPresenterControl}
         setShowPresenterControl={setShowPresenterControl}
         activeRightPanel={activeRightPanel}
@@ -99,84 +117,119 @@ export default function App() {
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
         {/* Left Sidebar (Hidden on Page 08 for clean read-only presentation) */}
         {!isReadOnlyPage && (
-          <Sidebar currentPage={currentPage} onNavigate={handleNavigateTo} />
+          <Sidebar
+            currentPage={currentPage}
+            onNavigate={(page) => {
+              if (page === 'page01') {
+                resetSession();
+              }
+              handleNavigateTo(page);
+            }}
+          />
         )}
 
         {/* Central Workspace Area */}
-        <main className="flex-1 flex flex-col min-w-0 bg-slate-50/70 overflow-y-auto relative">
-          <div className="flex-1 p-4 sm:p-6 lg:p-8 flex flex-col">
-            {viewMode === 'continuous' && !isReadOnlyPage && currentPage !== 'page07' ? (
-              <ContinuousChatFlow
-                onOpenMetricPanel={() => setActiveRightPanel('metric')}
-                onOpenPythonPanel={() => setActiveRightPanel('python')}
-                onOpenReportModal={() => setIsReportModalOpen(true)}
-                onOpenShareModal={() => setIsShareModalOpen(true)}
-                onNavigateToKeyframe={(page) => {
-                  setViewMode('keyframes');
-                  handleNavigateTo(page);
+        <main className="flex-1 flex flex-col min-w-0 bg-slate-50/70 overflow-hidden relative">
+          {viewMode === 'continuous' && !isReadOnlyPage && currentPage !== 'page07' ? (
+            <div className="flex-1 flex flex-col min-h-0">
+              <AgentThread
+                turns={task.turns}
+                loading={loading}
+                onSelectMetric={(metricId) => {
+                  selectMetric(metricId);
+                  setActiveRightPanel('metric');
+                }}
+                onOpenMetricContext={() => setActiveRightPanel('metric')}
+                onFollowUpDiagnosis={() =>
+                  triggerDiagnosis('为什么按期办结率环比下降了？请做多维归因分析。')
+                }
+                onOpenTrace={() => setActiveRightPanel('python')}
+                onOpenReport={() => setIsReportModalOpen(true)}
+                onConfirmSchedule={() => confirmSchedule()}
+                onCreateShare={async (blockIds) => {
+                  const share = await createShare(blockIds);
+                  return share;
+                }}
+                onOpenReadOnlyView={() => handleNavigateTo('page08')}
+                onQuickPrompt={(prompt, hasFile) => {
+                  if (hasFile) {
+                    const blob = new Blob(
+                      ['case_id,street_code,is_overdue\n1001,SH01,1'],
+                      { type: 'text/csv' },
+                    );
+                    const file = new File(
+                      [blob],
+                      'focus_case_list_2026W32.csv',
+                      { type: 'text/csv' },
+                    );
+                    sendMessage(prompt, [file]);
+                  } else {
+                    sendMessage(prompt);
+                  }
                 }}
               />
-            ) : (
-              <>
-                {currentPage === 'page01' && (
-                  <Page01Ask onNavigateNext={handleNavigateNext} />
-                )}
 
-                {currentPage === 'page02' && (
-                  <Page02Disambiguation
-                    onNavigateNext={handleNavigateNext}
-                    onOpenMetricPanel={() => setActiveRightPanel('metric')}
-                  />
-                )}
+              {/* Bottom Composer */}
+              <Composer
+                stage={task.stage}
+                loading={loading}
+                onSend={async (text, files) => {
+                  await sendMessage(text, files);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="flex-1 p-4 sm:p-6 lg:p-8 flex flex-col overflow-y-auto">
+              {currentPage === 'page01' && (
+                <Page01Ask onNavigateNext={handleNavigateNext} />
+              )}
 
-                {currentPage === 'page03' && (
-                  <Page03Diagnosis
-                    onNavigateNext={handleNavigateNext}
-                    onOpenReportModal={() => setIsReportModalOpen(true)}
-                  />
-                )}
+              {currentPage === 'page02' && (
+                <Page02Disambiguation
+                  onNavigateNext={handleNavigateNext}
+                  onOpenMetricPanel={() => setActiveRightPanel('metric')}
+                />
+              )}
 
-                {currentPage === 'page04' && (
-                  <Page04FileAnalysis
-                    onNavigateNext={handleNavigateNext}
-                    onOpenPythonPanel={() => setActiveRightPanel('python')}
-                  />
-                )}
+              {currentPage === 'page03' && (
+                <Page03Diagnosis
+                  onNavigateNext={handleNavigateNext}
+                  onOpenReportModal={() => setIsReportModalOpen(true)}
+                />
+              )}
 
-                {currentPage === 'page05' && (
-                  <Page05ScheduleConfirm onNavigateNext={handleNavigateNext} />
-                )}
+              {currentPage === 'page04' && (
+                <Page04FileAnalysis
+                  onNavigateNext={handleNavigateNext}
+                  onOpenPythonPanel={() => setActiveRightPanel('python')}
+                />
+              )}
 
-                {currentPage === 'page06' && (
-                  <Page06ScheduleSuccess onNavigateNext={handleNavigateNext} />
-                )}
+              {currentPage === 'page05' && (
+                <Page05ScheduleConfirm onNavigateNext={handleNavigateNext} />
+              )}
 
-                {currentPage === 'page07' && (
-                  <Page07ShareSelect
-                    onGenerateShareLink={(count) => {
-                      setShareSelectedCount(count);
-                      setIsShareModalOpen(true);
-                    }}
-                    onCancel={() => handleNavigateTo('page06')}
-                  />
-                )}
+              {currentPage === 'page06' && (
+                <Page06ScheduleSuccess onNavigateNext={handleNavigateNext} />
+              )}
 
-                {currentPage === 'page08' && (
-                  <Page08ReadOnly
-                    onOpenReportModal={() => setIsReportModalOpen(true)}
-                    onReturnToWorkbench={() => handleNavigateTo('page06')}
-                  />
-                )}
-              </>
-            )}
-          </div>
+              {currentPage === 'page07' && (
+                <Page07ShareSelect
+                  onGenerateShareLink={(count) => {
+                    setShareSelectedCount(count);
+                    setIsShareModalOpen(true);
+                  }}
+                  onCancel={() => handleNavigateTo('page06')}
+                />
+              )}
 
-          {/* Bottom Composer (Visible in Workbench workflow except Page 07 & Page 08) */}
-          {!isReadOnlyPage && currentPage !== 'page07' && (
-            <Composer
-              currentPage={currentPage}
-              onNavigateNext={handleNavigateNext}
-            />
+              {currentPage === 'page08' && (
+                <Page08ReadOnly
+                  onOpenReportModal={() => setIsReportModalOpen(true)}
+                  onReturnToWorkbench={() => handleNavigateTo('page06')}
+                />
+              )}
+            </div>
           )}
         </main>
 
@@ -185,6 +238,8 @@ export default function App() {
           <ContextPanel
             type={activeRightPanel}
             onClose={() => setActiveRightPanel(null)}
+            dynamicExecution={activeTraceExecution}
+            metricName={task.context.metricName}
           />
         )}
       </div>

@@ -1,0 +1,155 @@
+import React, { useState } from 'react';
+import { Share2, Check, ExternalLink, Copy, CheckCheck } from 'lucide-react';
+import { DEFAULT_SHAREABLE_BLOCKS } from '../../../data/mockData';
+
+interface Props {
+  onCreateShare: (blockIds: string[]) => Promise<any>;
+  onOpenReadOnlyView?: () => void;
+}
+
+export const ShareSelectionBlock: React.FC<Props> = ({
+  onCreateShare,
+  onOpenReadOnlyView,
+}) => {
+  const [items, setItems] = useState(DEFAULT_SHAREABLE_BLOCKS);
+  const [createdUrl, setCreatedUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const toggleItem = (id: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, selected: !item.selected } : item,
+      ),
+    );
+  };
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    try {
+      const selectedIds = items.filter((i) => i.selected).map((i) => i.id);
+      const res = await onCreateShare(selectedIds);
+      if (res?.url) {
+        setCreatedUrl(res.url);
+      } else {
+        setCreatedUrl(`/share/demo_${Date.now().toString(36)}`);
+      }
+    } catch (err) {
+      console.error(err);
+      setCreatedUrl(`/share/demo_${Date.now().toString(36)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyLink = () => {
+    navigator.clipboard?.writeText(window.location.origin + (createdUrl || ''));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4">
+      {/* Title */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Share2 className="w-5 h-5 text-blue-600" />
+          <h4 className="font-bold text-slate-900 text-sm">
+            精选需要对外呈现的分析内容
+          </h4>
+        </div>
+        <span className="text-xs text-slate-500">
+          已选 {items.filter((i) => i.selected).length} / {items.length} 项
+        </span>
+      </div>
+
+      <p className="text-xs text-slate-600">
+        勾选需要导出的关键分析结论与产物，系统将生成整洁的只读报告页，过滤掉中间过程与草稿对话。
+      </p>
+
+      {/* Selectable Items */}
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div
+            key={item.id}
+            onClick={() => toggleItem(item.id)}
+            className={`p-3 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+              item.selected
+                ? 'border-blue-500 bg-blue-50/40'
+                : 'border-slate-200 bg-slate-50/50 hover:bg-slate-50 opacity-70'
+            }`}
+          >
+            <div
+              className={`w-5 h-5 rounded-md flex items-center justify-center mt-0.5 border shrink-0 transition-colors ${
+                item.selected
+                  ? 'bg-blue-600 border-blue-600 text-white'
+                  : 'bg-white border-slate-300'
+              }`}
+            >
+              {item.selected && <Check className="w-3.5 h-3.5" />}
+            </div>
+
+            <div className="space-y-1 flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-900 text-xs truncate">
+                  {item.title}
+                </span>
+                <span className="bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded font-mono">
+                  {item.type}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 line-clamp-1">{item.summaryText}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Created Link or Generate Button */}
+      {createdUrl ? (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-800">
+              ✓ 分享链接已生成，具有只读权限
+            </span>
+            {onOpenReadOnlyView && (
+              <button
+                onClick={onOpenReadOnlyView}
+                className="text-xs text-blue-700 hover:text-blue-800 font-medium flex items-center gap-1 cursor-pointer"
+              >
+                <span>立即打开只读展示页</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={`${window.location.origin}${createdUrl}`}
+              className="flex-1 bg-white border border-emerald-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 font-mono select-all outline-none"
+            />
+            <button
+              onClick={copyLink}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              {copied ? <CheckCheck className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? '已复制' : '复制'}</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex justify-end pt-1">
+          <button
+            disabled={loading || items.filter((i) => i.selected).length === 0}
+            onClick={handleGenerate}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span>{loading ? '正在生成...' : '生成精选分享链接'}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
