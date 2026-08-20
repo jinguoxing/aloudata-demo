@@ -1,9 +1,11 @@
 import React, { useEffect, useRef } from 'react';
-import { Turn, AgentBlock } from '../../agent/contracts';
+import { Turn, AgentBlock, AgentTask } from '../../agent/contracts';
 import { BlockRenderer } from './BlockRenderer';
-import { User, Sparkles, FileSpreadsheet, ArrowRight } from 'lucide-react';
+import { User, Sparkles, FileSpreadsheet, ArrowRight, Compass } from 'lucide-react';
+import { getNextActions } from '../../agent/utils/nextActions';
 
 interface AgentThreadProps {
+  task?: AgentTask;
   turns: Turn[];
   loading?: boolean;
   onSelectMetric?: (metricId: string) => void;
@@ -19,6 +21,7 @@ interface AgentThreadProps {
 }
 
 export const AgentThread: React.FC<AgentThreadProps> = ({
+  task,
   turns,
   loading,
   onSelectMetric,
@@ -41,29 +44,17 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [turns, loading]);
 
-  const quickPrompts = [
-    {
-      title: '发起问数',
-      text: '帮我查一下上周公共服务热线工单按期办结率，看看趋势。',
-      badge: 'Metric Query',
-    },
-    {
-      title: '下钻归因',
-      text: '为什么按期办结率环比下降了？请做多维归因分析。',
-      badge: 'Attribution',
-    },
-    {
-      title: '上传融合分析',
-      text: '结合我上传的重点关注工单清单，帮我分析这批工单的超期影响。',
-      badge: 'CSV Enrichment',
-      hasFile: true,
-    },
-    {
-      title: '创建周期任务',
-      text: '以后每周一上午 9 点帮我做一次这个分析，生成周报。',
-      badge: 'Workflow Schedule',
-    },
-  ];
+  const currentTask: AgentTask = task || {
+    sessionId: '',
+    taskId: '',
+    title: '公共服务热线工单按期办结率分析',
+    status: 'OPEN',
+    stage: 'ASK_DATA',
+    turns,
+    artifactIds: [],
+  };
+
+  const nextActions = getNextActions(currentTask);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
@@ -84,9 +75,9 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            {quickPrompts.map((q, idx) => (
+            {nextActions.map((q) => (
               <div
-                key={idx}
+                key={q.id}
                 onClick={() => onQuickPrompt?.(q.text, q.hasFile)}
                 className="p-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-blue-300 rounded-2xl cursor-pointer transition-all shadow-xs space-y-2 group"
               >
@@ -168,6 +159,29 @@ export const AgentThread: React.FC<AgentThreadProps> = ({
             )}
           </div>
         ))}
+
+        {/* Suggest Next Actions chip bar if turns exist and not loading */}
+        {turns.length > 0 && !loading && nextActions.length > 0 && (
+          <div className="pt-2 animate-in fade-in duration-300 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+              <Compass className="w-3.5 h-3.5 text-blue-600" />
+              <span>推荐下一步动作</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {nextActions.slice(0, 3).map((act) => (
+                <button
+                  key={act.id}
+                  onClick={() => onQuickPrompt?.(act.text, act.hasFile)}
+                  className="bg-white hover:bg-blue-50/60 border border-slate-200 hover:border-blue-300 text-slate-700 hover:text-blue-700 text-xs px-3 py-1.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer text-left"
+                >
+                  <span className="font-medium">{act.title}</span>
+                  <span className="text-slate-400 text-[11px]">· {act.text.length > 20 ? act.text.slice(0, 20) + '...' : act.text}</span>
+                  <ArrowRight className="w-3 h-3 text-blue-500 shrink-0" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {loading && (
           <div className="flex items-center gap-2 text-xs text-slate-500 py-2 bg-slate-50 border border-slate-200/60 rounded-xl px-4 w-fit">

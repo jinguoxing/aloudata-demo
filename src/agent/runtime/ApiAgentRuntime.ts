@@ -4,6 +4,8 @@ import {
   AgentTask,
   TaskAction,
   ShareArtifact,
+  MetricDefinition,
+  ReportDocument,
 } from '../contracts';
 
 function toAbsoluteUrl(url: string): string {
@@ -273,6 +275,22 @@ export class ApiAgentRuntime {
     const response = await fetch(`/api/v1/shares/${shareId}`);
     if (!response.ok) {
       throw new Error('Share artifact not found');
+    }
+    return response.json();
+  }
+
+  async getMetricDefinition(metricId: string): Promise<MetricDefinition> {
+    const response = await fetch(`/api/v1/metrics/${metricId}`);
+    if (!response.ok) {
+      throw new Error('Failed to load metric definition');
+    }
+    return response.json();
+  }
+
+  async getArtifact(artifactId: string): Promise<ReportDocument> {
+    const response = await fetch(`/api/v1/artifacts/${artifactId}`);
+    if (!response.ok) {
+      throw new Error('Artifact not found');
     }
     return response.json();
   }

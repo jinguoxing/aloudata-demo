@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageState } from './types';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -9,6 +9,8 @@ import { ShareModal } from './components/ShareModal';
 import { PresenterControl } from './components/PresenterControl';
 import { AgentThread } from './components/agent/AgentThread';
 import { useAgentTask } from './agent/useAgentTask';
+import { ShareArtifact } from './agent/contracts';
+import { AlertCircle, ArrowLeft } from 'lucide-react';
 
 // Keyframe legacy pages for presenter inspection
 import { Page01Ask } from './components/pages/Page01Ask';
@@ -29,6 +31,19 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareSelectedCount, setShareSelectedCount] = useState(4);
   const [customShareUrl, setCustomShareUrl] = useState<string | undefined>(undefined);
+  const [activeReportDocument, setActiveReportDocument] = useState<any>(null);
+
+  // Direct share link routing support (/share/:shareId)
+  const [directShareId, setDirectShareId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/share/')) {
+      const id = window.location.pathname.replace('/share/', '').trim();
+      return id.length > 0 ? id : null;
+    }
+    return null;
+  });
+  const [directShareArtifact, setDirectShareArtifact] = useState<ShareArtifact | null>(null);
+  const [shareLoadError, setShareLoadError] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState<boolean>(false);
 
   // Real Agent Task Runtime Hook
   const {
@@ -36,6 +51,7 @@ export default function App() {
     loading,
     activeTraceExecution,
     activeShareArtifact,
+    activeMetricDefinition,
     sendMessage,
     selectMetric,
     confirmSchedule,
@@ -43,6 +59,31 @@ export default function App() {
     triggerDiagnosis,
     resetSession,
   } = useAgentTask();
+
+  // Handle direct share URL lookup
+  useEffect(() => {
+    if (directShareId) {
+      setShareLoading(true);
+      fetch(`/api/v1/shares/${directShareId}`)
+        .then(async (res) => {
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || `分享链接不存在或已失效 (404 Not Found)`);
+          }
+          return res.json();
+        })
+        .then((data: ShareArtifact) => {
+          setDirectShareArtifact(data);
+          setCurrentPage('page08');
+        })
+        .catch((err: any) => {
+          setShareLoadError(err.message || '分享链接不存在或已失效');
+        })
+        .finally(() => {
+          setShareLoading(false);
+        });
+    }
+  }, [directShareId]);
 
   // Flatten all task blocks
   const allTaskBlocks = task.turns.flatMap((t) => t.blocks);
@@ -86,6 +127,35 @@ export default function App() {
   };
 
   const isReadOnlyPage = currentPage === 'page08';
+
+  // Handle Direct Share 404 Page
+  if (directShareId && shareLoadError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6 text-slate-800">
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 max-w-md w-full shadow-lg text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900">分享产物不存在 (404)</h2>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            {shareLoadError}。该分享 ID 未在服务端注册或已过期，请检查分享链接是否正确。
+          </p>
+          <button
+            onClick={() => {
+              window.history.pushState(null, '', '/');
+              setDirectShareId(null);
+              setShareLoadError(null);
+              setCurrentPage('page01');
+            }}
+            className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>返回 Semovix AI 工作台</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 font-sans text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900">
@@ -138,6 +208,7 @@ export default function App() {
           {viewMode === 'continuous' && !isReadOnlyPage && currentPage !== 'page07' ? (
             <div className="flex-1 flex flex-col min-h-0">
               <AgentThread
+                task={task}
                 turns={task.turns}
                 loading={loading}
                 onSelectMetric={(metricId) => {
@@ -149,7 +220,21 @@ export default function App() {
                   triggerDiagnosis('为什么按期办结率环比下降了？请做多维归因分析。')
                 }
                 onOpenTrace={() => setActiveRightPanel('python')}
-                onOpenReport={() => setIsReportModalOpen(true)}
+                onOpenReport={(artifactId) => {
+                  if (artifactId) {
+                    fetch(`/api/v1/artifacts/${artifactId}`)
+                      .then((r) => (r.ok ? r.json() : null))
+                      .then((doc) => {
+                        if (doc) setActiveReportDocument(doc);
+                        setIsReportModalOpen(true);
+                      })
+                      .catch(() => {
+                        setIsReportModalOpen(true);
+                      });
+                  } else {
+                    setIsReportModalOpen(true);
+                  }
+                }}
                 onConfirmSchedule={() => confirmSchedule()}
                 onInitiateShare={() => {
                   sendMessage('生成精选分析分享链接');
@@ -164,15 +249,12 @@ export default function App() {
                 onOpenReadOnlyView={() => handleNavigateTo('page08')}
                 onQuickPrompt={(prompt, hasFile) => {
                   if (hasFile) {
-                    const blob = new Blob(
-                      ['case_id,street_code,is_overdue\n1001,SH01,1'],
-                      { type: 'text/csv' },
-                    );
-                    const file = new File(
-                      [blob],
-                      'focus_case_list_2026W32.csv',
-                      { type: 'text/csv' },
-                    );
+                    const sampleCsv =
+                      'case_id,street_code,appeal_category,is_overdue,duration_days\n1001,SH01,物业管理,1,4.2\n1002,SH02,劳动保障,1,3.8';
+                    const blob = new Blob([sampleCsv], { type: 'text/csv' });
+                    const file = new File([blob], 'focus_case_list_2026W32.csv', {
+                      type: 'text/csv',
+                    });
                     sendMessage(prompt, [file]);
                   } else {
                     sendMessage(prompt);
@@ -243,10 +325,30 @@ export default function App() {
 
               {currentPage === 'page08' && (
                 <Page08ReadOnly
-                  shareArtifact={activeShareArtifact}
+                  shareArtifact={directShareArtifact || activeShareArtifact || task.context?.shareArtifact}
                   taskBlocks={allTaskBlocks}
-                  onOpenReportModal={() => setIsReportModalOpen(true)}
-                  onReturnToWorkbench={() => handleNavigateTo('page06')}
+                  onOpenReportModal={(artifactId) => {
+                    if (artifactId) {
+                      fetch(`/api/v1/artifacts/${artifactId}`)
+                        .then((r) => (r.ok ? r.json() : null))
+                        .then((doc) => {
+                          if (doc) setActiveReportDocument(doc);
+                          setIsReportModalOpen(true);
+                        })
+                        .catch(() => {
+                          setIsReportModalOpen(true);
+                        });
+                    } else {
+                      setIsReportModalOpen(true);
+                    }
+                  }}
+                  onReturnToWorkbench={() => {
+                    if (directShareId) {
+                      window.history.pushState(null, '', '/');
+                      setDirectShareId(null);
+                    }
+                    handleNavigateTo('page06');
+                  }}
                 />
               )}
             </div>
@@ -259,7 +361,7 @@ export default function App() {
             type={activeRightPanel}
             onClose={() => setActiveRightPanel(null)}
             dynamicExecution={activeTraceExecution}
-            metricName={task.context.metricName}
+            metricDefinition={task.context?.metricDefinition || activeMetricDefinition}
           />
         )}
       </div>
@@ -268,6 +370,7 @@ export default function App() {
       <ReportModal
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
+        reportDocument={activeReportDocument || task.context?.latestReportDocument}
         onShare={() => {
           setIsReportModalOpen(false);
           handleNavigateTo('page07');
@@ -279,7 +382,7 @@ export default function App() {
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         selectedCount={shareSelectedCount}
-        shareUrl={customShareUrl}
+        shareUrl={customShareUrl || task.context?.shareUrl}
         onOpenReadOnlyView={() => {
           setIsShareModalOpen(false);
           handleNavigateTo('page08');

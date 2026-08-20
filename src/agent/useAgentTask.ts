@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   AgentTask,
   AgentEvent,
-  AgentBlock,
   AttachmentRef,
   TaskAction,
   ShareArtifact,
   ToolExecutionPayload,
+  MetricDefinition,
+  ReportDocument,
 } from './contracts';
 import { applyAgentEvent } from './reducer';
 import { apiAgentRuntime } from './runtime/ApiAgentRuntime';
@@ -31,6 +32,14 @@ export function useAgentTask() {
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [activeTraceExecution, setActiveTraceExecution] = useState<ToolExecutionPayload | null>(null);
   const [activeShareArtifact, setActiveShareArtifact] = useState<ShareArtifact | null>(null);
+  const [activeMetricDefinition, setActiveMetricDefinition] = useState<MetricDefinition | null>(null);
+  const [activeReportDocument, setActiveReportDocument] = useState<ReportDocument | null>(null);
+  const [reportLoading, setReportLoading] = useState<boolean>(false);
+
+  // External share loading for /share/:shareId route
+  const [externalShare, setExternalShare] = useState<ShareArtifact | null>(null);
+  const [externalShareLoading, setExternalShareLoading] = useState<boolean>(false);
+  const [shareLoadError, setShareLoadError] = useState<string | null>(null);
 
   const taskRef = useRef<AgentTask>(task);
   taskRef.current = task;
@@ -50,6 +59,27 @@ export function useAgentTask() {
       setActiveTraceExecution(event.block.payload as ToolExecutionPayload);
     }
   }, []);
+
+  // Fetch metric definition when task metricId changes
+  useEffect(() => {
+    const metricId = task.context?.metricId || 'metric_on_time_rate';
+    let isCancelled = false;
+
+    apiAgentRuntime
+      .getMetricDefinition(metricId)
+      .then((def) => {
+        if (!isCancelled && def) {
+          setActiveMetricDefinition(def);
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not fetch metric definition:', err);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [task.context?.metricId]);
 
   // Initialize session on mount (Hydrate from server if existing)
   const initSession = useCallback(async (forceNew = false) => {
@@ -203,23 +233,11 @@ export function useAgentTask() {
   );
 
   const createShare = useCallback(
-    async (blockIds: string[], blocksToShare?: AgentBlock[]) => {
-      // Find all blocks from task if not directly supplied
-      const allTaskBlocks: AgentBlock[] = [];
-      taskRef.current.turns.forEach((t) => {
-        t.blocks.forEach((b) => allTaskBlocks.push(b));
-      });
-
-      const selectedBlocks =
-        blocksToShare && blocksToShare.length > 0
-          ? blocksToShare
-          : allTaskBlocks.filter((b) => blockIds.includes(b.blockId));
-
+    async (blockIds: string[]) => {
       const res = await performAction({
         actionType: 'CREATE_SHARE',
         payload: {
           blockIds,
-          blocks: selectedBlocks,
         },
       });
       return res.share as ShareArtifact;
@@ -234,18 +252,57 @@ export function useAgentTask() {
     [sendMessage],
   );
 
+  const loadReport = useCallback(async (artifactId: string) => {
+    try {
+      setReportLoading(true);
+      const report = await apiAgentRuntime.getArtifact(artifactId);
+      setActiveReportDocument(report);
+      return report;
+    } catch (err) {
+      console.error('Failed to load report document:', err);
+      return null;
+    } finally {
+      setReportLoading(false);
+    }
+  }, []);
+
+  const loadShare = useCallback(async (shareId: string) => {
+    try {
+      setExternalShareLoading(true);
+      setShareLoadError(null);
+      const share = await apiAgentRuntime.getShare(shareId);
+      setExternalShare(share);
+      return share;
+    } catch (err: any) {
+      console.error('Failed to load share artifact:', err);
+      setShareLoadError(err.message || '分享链接不存在或已失效');
+      setExternalShare(null);
+      return null;
+    } finally {
+      setExternalShareLoading(false);
+    }
+  }, []);
+
   return {
     task,
     loading,
     isInitialized,
     activeTraceExecution,
     activeShareArtifact,
+    activeMetricDefinition,
+    activeReportDocument,
+    reportLoading,
+    externalShare,
+    externalShareLoading,
+    shareLoadError,
     sendMessage,
     performAction,
     selectMetric,
     confirmSchedule,
     createShare,
     triggerDiagnosis,
+    loadReport,
+    loadShare,
     resetSession,
   };
 }

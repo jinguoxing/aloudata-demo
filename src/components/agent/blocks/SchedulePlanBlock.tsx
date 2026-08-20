@@ -1,6 +1,6 @@
 import React from 'react';
 import { SchedulePlanPayload } from '../../../agent/contracts';
-import { Calendar, Clock, MapPin, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Calendar, Clock, MapPin, CheckCircle2, ArrowRight, AlertCircle } from 'lucide-react';
 
 interface Props {
   payload: SchedulePlanPayload;
@@ -13,7 +13,9 @@ export const SchedulePlanBlock: React.FC<Props> = ({
   onConfirmSchedule,
   disabled = false,
 }) => {
-  const { taskName, frequency, region, metric, steps } = payload;
+  const { taskName, frequency, region, metric, steps, missingSlots } = payload;
+  const hasMissingSlots = missingSlots && missingSlots.length > 0;
+  const canConfirm = !hasMissingSlots && !disabled;
 
   return (
     <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4">
@@ -25,8 +27,14 @@ export const SchedulePlanBlock: React.FC<Props> = ({
             确认创建周期分析任务
           </h4>
         </div>
-        <span className="bg-amber-50 text-amber-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-amber-200">
-          待用户确认
+        <span
+          className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${
+            hasMissingSlots
+              ? 'bg-rose-50 text-rose-700 border-rose-200'
+              : 'bg-amber-50 text-amber-800 border-amber-200'
+          }`}
+        >
+          {hasMissingSlots ? '调度信息待完善' : '待用户确认'}
         </span>
       </div>
 
@@ -39,7 +47,7 @@ export const SchedulePlanBlock: React.FC<Props> = ({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
           <div className="flex items-center gap-1.5 text-slate-700 bg-white p-2 rounded-lg border border-slate-200">
             <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-            <span>频率：<strong>{frequency || '每周一 09:00'}</strong></span>
+            <span>频率：<strong>{frequency || '待定'}</strong></span>
           </div>
           <div className="flex items-center gap-1.5 text-slate-700 bg-white p-2 rounded-lg border border-slate-200">
             <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -50,6 +58,14 @@ export const SchedulePlanBlock: React.FC<Props> = ({
             <span>核心指标：<strong>{metric || '按期办结率'}</strong></span>
           </div>
         </div>
+
+        {/* Missing slots warning */}
+        {hasMissingSlots && (
+          <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-lg flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>请在对话框中补充具体时间（缺少：{missingSlots.join('、')}）。</span>
+          </div>
+        )}
 
         {/* Execution Workflow steps */}
         {steps && steps.length > 0 && (
@@ -76,10 +92,10 @@ export const SchedulePlanBlock: React.FC<Props> = ({
         </span>
 
         <button
-          disabled={disabled}
+          disabled={!canConfirm}
           onClick={onConfirmSchedule}
           className={`bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-            disabled ? 'opacity-50 cursor-not-allowed' : ''
+            !canConfirm ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
           <span>确认创建周期任务</span>

@@ -1,3 +1,17 @@
+export interface MetricDefinition {
+  id: string;
+  name: string;
+  status: string;
+  definition: string;
+  formula: string;
+  granularity: string;
+  timeSemantics: string;
+  businessObject: string;
+  dataSource: string;
+  version?: string;
+  effectiveAt?: string;
+}
+
 export type TaskStatus =
   | 'OPEN'
   | 'RUNNING'
@@ -58,6 +72,7 @@ export interface TaskContext {
   region?: string;
   metricId?: string;
   metricName?: string;
+  metricDefinition?: MetricDefinition;
   businessObjects?: string[];
   resourceIds?: string[];
   attachmentIds?: string[];
@@ -65,7 +80,26 @@ export interface TaskContext {
   hasAttachments?: boolean;
   selectedMetricOption?: 'on_time' | 'total';
   latestReportId?: string;
+  latestReportDocument?: ReportDocument;
   latestExecutionId?: string;
+  scope?:
+    | string
+    | {
+        region?: string;
+        streetTown?: string;
+        appealCategory?: string;
+      };
+  timeRange?:
+    | string
+    | {
+        type: 'LAST_WEEK' | 'RECENT_WEEKS' | 'CUSTOM';
+        weeks?: number;
+        label?: string;
+      };
+  comparison?: string | 'WOW' | 'YOY';
+  compareType?: 'wow' | 'yoy';
+  metricSnapshot?: any;
+  scheduleDraft?: any;
   scheduleConfig?: any;
   shareArtifact?: ShareArtifact;
   shareUrl?: string;
@@ -124,6 +158,17 @@ export type AgentEvent =
       message: string;
     };
 
+export interface TurnResolution {
+  route:
+    | 'ASK_METRIC'
+    | 'ANALYZE_CAUSE'
+    | 'FILE_ANALYSIS'
+    | 'CREATE_SCHEDULE'
+    | 'SHARE'
+    | 'GENERAL';
+  contextPatch?: Partial<TaskContext>;
+}
+
 export type TaskAction =
   | {
       actionType: 'SELECT_METRIC';
@@ -150,7 +195,6 @@ export type TaskAction =
       actionType: 'CREATE_SHARE';
       payload: {
         blockIds: string[];
-        blocks?: AgentBlock[];
       };
     };
 
@@ -165,6 +209,29 @@ export interface ShareArtifact {
   url: string;
 }
 
+export interface ReportDocument {
+  artifactId: string;
+  title: string;
+  generatedAt: string;
+  scope: {
+    region?: string;
+    timeLabel?: string;
+  };
+  metric?: {
+    id: string;
+    name: string;
+    value: string;
+    comparison?: string;
+  };
+  summary: string;
+  findings: {
+    title: string;
+    description: string;
+  }[];
+  evidence: DiagnosticEvidenceItem[];
+  limitation?: string;
+}
+
 // Detailed Block Payload Contracts
 export interface MetricCandidate {
   id: string;
@@ -177,7 +244,9 @@ export interface MetricCandidate {
 export interface MetricDisambiguationPayload {
   title: string;
   candidates: MetricCandidate[];
+  recommendedMetricId?: string;
   selectedMetricId?: string;
+  resolutionStatus?: 'PENDING' | 'RESOLVED';
 }
 
 export interface MetricTableRow {
@@ -292,6 +361,7 @@ export interface SchedulePlanPayload {
   metric: string;
   region: string;
   steps: string[];
+  missingSlots?: string[];
 }
 
 export interface ScheduleCreatedPayload {

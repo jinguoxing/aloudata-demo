@@ -7,6 +7,7 @@ import { createServer as createViteServer } from 'vite';
 import { eventHub } from './server/agent/eventHub';
 import { taskStore } from './server/agent/taskStore';
 import { fileStore } from './server/agent/fileStore';
+import { artifactStore } from './server/agent/artifactStore';
 import {
   runTurn,
   handleMetricQueryExecute,
@@ -16,7 +17,7 @@ import { semovix } from './server/services/mockSemovix';
 
 dotenv.config();
 
-// Multer in-memory storage for real file processing
+// Multer in-memory storage for file processing
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -28,7 +29,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // JSON Body Parser with ample limit for CSV/Data payloads
+  // JSON Body Parser
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -167,12 +168,31 @@ async function startServer() {
       }
 
       case 'CREATE_SHARE': {
-        const blockIds = action.payload?.blockIds || [];
-        const blocks = action.payload?.blocks || [];
+        const selectedBlockIds: string[] = action.payload?.selectedBlockIds || action.payload?.blockIds || [];
+
+        // Retrieve server authoritative task and blocks
+        const task = taskStore.getTaskByTaskId(taskId);
+        const allBlocks = task ? task.turns.flatMap((t) => t.blocks) : [];
+
+        // Server-side authoritative filter of blocks
+        const matchedBlocks = allBlocks.filter((b) => selectedBlockIds.includes(b.blockId));
+
+        const shareableTypes = [
+          'metric_answer',
+          'evidence_summary',
+          'analysis_result',
+          'artifact_summary',
+          'schedule_created',
+          'assistant_message',
+        ];
+
+        const finalBlocks = matchedBlocks.filter((b) => shareableTypes.includes(b.type));
+
         const share = await semovix.createShareArtifact({
           taskId,
-          selectedBlockIds: blockIds,
-          blocks,
+          title: action.payload?.title || `${task?.context?.region || '上海市闵行区'}${task?.context?.metricName || '按期办结率'}分析 · 精选结果`,
+          selectedBlockIds,
+          blocks: finalBlocks,
         });
 
         // Record share artifact in task context on server
@@ -208,16 +228,20 @@ async function startServer() {
           size: saved.size,
           rowCount: saved.rowCount,
           columns: saved.columnNames,
+          status: saved.status,
+          errorMessage: saved.errorMessage,
           summary: saved.summary,
         });
       }
 
-      // Fallback for JSON body (e.g. quick demo CSV loader)
+      // Fallback for JSON body
       const fileName = req.body?.fileName || 'focus_case_list_2026W32.csv';
+      const sampleCsv = 'case_id,street_code,appeal_category,is_overdue,duration_days\n1001,SH01,物业管理,1,4.2\n1002,SH02,劳动保障,1,3.8';
       const saved = fileStore.saveFile({
         fileName,
         mimeType: 'text/csv',
-        size: 967372,
+        size: sampleCsv.length,
+        buffer: Buffer.from(sampleCsv, 'utf-8'),
       });
 
       res.json({
@@ -227,6 +251,8 @@ async function startServer() {
         size: saved.size,
         rowCount: saved.rowCount,
         columns: saved.columnNames,
+        status: saved.status,
+        errorMessage: saved.errorMessage,
         summary: saved.summary,
       });
     } catch (err: any) {
@@ -235,20 +261,14 @@ async function startServer() {
     }
   });
 
-  // Share Artifact Retrieval
+  // Share Artifact Retrieval - Server Authoritative 404
   app.get('/api/v1/shares/:shareId', async (req, res) => {
     const share = await semovix.getShareArtifact(req.params.shareId);
     if (!share) {
-      // Return default curated share if not found
-      return res.json({
-        shareId: req.params.shareId,
-        taskId: 'task_default',
-        title: '公共服务热线工单按期办结率变化分析 · 精选结果',
-        selectedBlockIds: ['blk_01', 'blk_02', 'blk_03', 'blk_04'],
-        blocks: [],
-        createdAt: new Date().toISOString(),
-        accessMode: 'READ_ONLY',
-        url: `/share/${req.params.shareId}`,
+      return res.status(404).json({
+        error: 'Share artifact not found',
+        code: 'NOT_FOUND',
+        message: '该分享链接不存在或已过期。',
       });
     }
     res.json(share);
@@ -257,7 +277,19 @@ async function startServer() {
   // Metric semantic definitions
   app.get('/api/v1/metrics/:metricId', async (req, res) => {
     const metric = await semovix.getMetricDefinition(req.params.metricId);
+    if (!metric) {
+      return res.status(404).json({ error: 'Metric not found' });
+    }
     res.json(metric);
+  });
+
+  // Report Artifact Document retrieval
+  app.get('/api/v1/artifacts/:artifactId', (req, res) => {
+    const report = artifactStore.getReport(req.params.artifactId);
+    if (!report) {
+      return res.status(404).json({ error: 'Artifact not found' });
+    }
+    res.json(report);
   });
 
   // ---------------- Vite Middleware / Production Serving ---------------- //

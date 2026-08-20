@@ -13,18 +13,20 @@ export const MetricDisambiguationBlock: React.FC<Props> = ({
   onSelectMetric,
   disabled = false,
 }) => {
-  const { title, candidates, selectedMetricId } = payload;
+  const { title, candidates, recommendedMetricId, selectedMetricId } = payload;
 
   return (
     <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4">
       <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
         <HelpCircle className="w-4 h-4 text-blue-600" />
-        <span>{title || '找到 2 个相关正式指标，请确认本次使用口径'}</span>
+        <span>{title || '找到相关正式指标，请确认本次使用口径'}</span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
         {candidates.map((candidate) => {
           const isSelected = selectedMetricId === candidate.id;
+          const isRecommended = candidate.isRecommended || recommendedMetricId === candidate.id;
+
           return (
             <div
               key={candidate.id}
@@ -39,7 +41,7 @@ export const MetricDisambiguationBlock: React.FC<Props> = ({
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-slate-900 text-sm flex items-center gap-1.5">
                     {candidate.name}
-                    {candidate.isRecommended && (
+                    {isRecommended && (
                       <span className="bg-blue-100 text-blue-800 text-[10px] font-medium px-1.5 py-0.5 rounded border border-blue-200">
                         {candidate.tag || '推荐'}
                       </span>
