@@ -6,6 +6,7 @@ import { Composer } from './components/Composer';
 import { ContextPanel } from './components/ContextPanel';
 import { ReportModal } from './components/ReportModal';
 import { ShareModal } from './components/ShareModal';
+import { ShareSelectionModal } from './components/ShareSelectionModal';
 import { PresenterControl } from './components/PresenterControl';
 import { AgentThread } from './components/agent/AgentThread';
 import { useAgentTask } from './agent/useAgentTask';
@@ -31,6 +32,7 @@ export default function App() {
   const [showPresenterControl, setShowPresenterControl] = useState(demoMode);
   const [activeRightPanel, setActiveRightPanel] = useState<'metric' | 'python' | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isShareSelectModalOpen, setIsShareSelectModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareSelectedCount, setShareSelectedCount] = useState(4);
   const [customShareUrl, setCustomShareUrl] = useState<string | undefined>(undefined);
@@ -187,7 +189,7 @@ export default function App() {
           handleNavigateTo(page);
         }}
         onShare={() => {
-          setIsShareModalOpen(true);
+          setIsShareSelectModalOpen(true);
         }}
         showPresenterControl={showPresenterControl}
         setShowPresenterControl={setShowPresenterControl}
@@ -246,7 +248,7 @@ export default function App() {
                 }}
                 onConfirmSchedule={() => confirmSchedule()}
                 onInitiateShare={() => {
-                  setIsShareModalOpen(true);
+                  setIsShareSelectModalOpen(true);
                 }}
                 onCreateShare={async (blockIds, blocksToShare) => {
                   const share = await createShare(blockIds, blocksToShare);
@@ -384,7 +386,26 @@ export default function App() {
         reportDocument={activeReportDocument || task.context?.latestReportDocument}
         onShare={() => {
           setIsReportModalOpen(false);
-          handleNavigateTo('page07');
+          setIsShareSelectModalOpen(true);
+        }}
+      />
+
+      {/* Share Content Selection Modal */}
+      <ShareSelectionModal
+        isOpen={isShareSelectModalOpen}
+        onClose={() => setIsShareSelectModalOpen(false)}
+        availableBlocks={allTaskBlocks}
+        onCreateShare={async (blockIds, blocksToShare) => {
+          const share = await createShare(blockIds, blocksToShare);
+          if (share?.url) {
+            setCustomShareUrl(`${window.location.origin}${share.url}`);
+          }
+          return share;
+        }}
+        onShareCreated={(shareUrl, selectedCount) => {
+          setCustomShareUrl(shareUrl);
+          setShareSelectedCount(selectedCount);
+          setIsShareModalOpen(true);
         }}
       />
 

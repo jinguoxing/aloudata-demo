@@ -83,7 +83,6 @@ export const ConversationTurn: React.FC<Props> = ({
                 <BlockRenderer
                   key={block.blockId}
                   block={block}
-                  task={task}
                   availableBlocks={availableBlocks}
                   onSelectMetric={onSelectMetric}
                   onOpenMetricContext={onOpenMetricContext}
