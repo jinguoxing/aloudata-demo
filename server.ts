@@ -12,6 +12,7 @@ import {
   runTurn,
   handleMetricQueryExecute,
   handleScheduleConfirmAction,
+  cancelTurn,
 } from './server/agent/orchestrator';
 import { semovix } from './server/services/mockSemovix';
 
@@ -128,6 +129,19 @@ async function startServer() {
     res.flushHeaders?.();
 
     eventHub.subscribe(turnId, res);
+  });
+
+  // Cancel turn execution
+  app.post('/api/v1/sessions/:sessionId/turns/:turnId/cancel', (req, res) => {
+    const { turnId } = req.params;
+    cancelTurn(turnId);
+    res.json({ status: 'ok', turnId, cancelled: true });
+  });
+
+  app.post('/api/v1/turns/:turnId/cancel', (req, res) => {
+    const { turnId } = req.params;
+    cancelTurn(turnId);
+    res.json({ status: 'ok', turnId, cancelled: true });
   });
 
   // JSON Events endpoint for fallback polling

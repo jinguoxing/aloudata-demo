@@ -29,6 +29,32 @@ function toAbsoluteUrl(url: string): string {
 }
 
 export class ApiAgentRuntime {
+  private currentActiveTurnId: string | null = null;
+  private currentAbortFn: (() => void) | null = null;
+
+  async cancelTurn(turnId?: string, sessionId?: string): Promise<void> {
+    const targetTurnId = turnId || this.currentActiveTurnId;
+    if (this.currentAbortFn) {
+      try {
+        this.currentAbortFn();
+      } catch {
+        // ignore
+      }
+      this.currentAbortFn = null;
+    }
+    if (targetTurnId) {
+      const cancelUrl = sessionId
+        ? `/api/v1/sessions/${sessionId}/turns/${targetTurnId}/cancel`
+        : `/api/v1/turns/${targetTurnId}/cancel`;
+      try {
+        await fetch(cancelUrl, { method: 'POST' });
+      } catch (err) {
+        console.warn('Failed to notify server of turn cancellation:', err);
+      }
+    }
+    this.currentActiveTurnId = null;
+  }
+
   async createSession(): Promise<{ sessionId: string; taskId: string; task: AgentTask }> {
     const response = await fetch('/api/v1/sessions', {
       method: 'POST',
@@ -86,9 +112,15 @@ export class ApiAgentRuntime {
       let source: EventSource | null = null;
       let pollInterval: any = null;
 
+      this.currentActiveTurnId = params.turnId;
+
       const finishSuccess = () => {
         if (isSettled) return;
         isSettled = true;
+        this.currentAbortFn = null;
+        if (this.currentActiveTurnId === params.turnId) {
+          this.currentActiveTurnId = null;
+        }
         if (pollInterval) clearInterval(pollInterval);
         if (source) {
           try {
@@ -103,6 +135,10 @@ export class ApiAgentRuntime {
       const finishError = (err: Error) => {
         if (isSettled) return;
         isSettled = true;
+        this.currentAbortFn = null;
+        if (this.currentActiveTurnId === params.turnId) {
+          this.currentActiveTurnId = null;
+        }
         if (pollInterval) clearInterval(pollInterval);
         if (source) {
           try {
@@ -112,6 +148,10 @@ export class ApiAgentRuntime {
           }
         }
         reject(err);
+      };
+
+      this.currentAbortFn = () => {
+        finishError(new Error('Turn was cancelled by user'));
       };
 
       // Fallback polling mechanism if EventSource fails or is blocked

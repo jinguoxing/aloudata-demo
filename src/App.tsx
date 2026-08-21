@@ -187,7 +187,7 @@ export default function App() {
           handleNavigateTo(page);
         }}
         onShare={() => {
-          sendMessage('生成精选分析分享链接');
+          setIsShareModalOpen(true);
         }}
         showPresenterControl={showPresenterControl}
         setShowPresenterControl={setShowPresenterControl}
@@ -246,7 +246,7 @@ export default function App() {
                 }}
                 onConfirmSchedule={() => confirmSchedule()}
                 onInitiateShare={() => {
-                  sendMessage('生成精选分析分享链接');
+                  setIsShareModalOpen(true);
                 }}
                 onCreateShare={async (blockIds, blocksToShare) => {
                   const share = await createShare(blockIds, blocksToShare);

@@ -22,29 +22,29 @@ export function getNextActions(task: AgentTask): NextActionItem[] {
     case 'ASK_DATA':
       return [
         {
+          id: 'act_find_data',
+          title: '找数据',
+          text: `查询公共服务热线工单相关指标与口径定义。`,
+          badge: '找数据',
+        },
+        {
           id: 'act_ask_metric',
-          title: '发起问数',
+          title: '问数据',
           text: `帮我查一下上周${region}公共服务热线工单${metricName}。`,
-          badge: '指标问数',
+          badge: '问数据',
         },
         {
           id: 'act_diagnose',
-          title: '归因诊断',
+          title: '做分析',
           text: `为什么${metricName}环比下降了？请做多维归因分析。`,
-          badge: '智能归因',
+          badge: '做分析',
         },
         {
           id: 'act_upload',
-          title: '融合清单分析',
+          title: '问知识 / 定任务',
           text: '结合重点关注工单清单，分析这批工单对办结率的拖累影响。',
-          badge: '数据融合',
+          badge: '定任务',
           hasFile: true,
-        },
-        {
-          id: 'act_schedule',
-          title: '周期调度',
-          text: '以后每周一上午 9 点帮我做一次这个分析，生成周报。',
-          badge: '自动化',
         },
       ];
 

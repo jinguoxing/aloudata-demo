@@ -60,9 +60,13 @@ export function useAgentTask() {
     }
   }, []);
 
-  // Fetch metric definition when task metricId changes
+  // Fetch metric definition when task metricId changes (only if explicitly set / selected)
   useEffect(() => {
-    const metricId = task.context?.metricId || 'metric_on_time_rate';
+    const metricId = task.context?.metricId;
+    if (!metricId) {
+      setActiveMetricDefinition(null);
+      return;
+    }
     let isCancelled = false;
 
     apiAgentRuntime
@@ -289,8 +293,13 @@ export function useAgentTask() {
     }
   }, []);
 
-  const stopGenerating = useCallback(() => {
+  const stopGenerating = useCallback(async () => {
     setLoading(false);
+    try {
+      await apiAgentRuntime.cancelTurn(undefined, taskRef.current.sessionId);
+    } catch (err) {
+      console.warn('Failed to cancel turn on server:', err);
+    }
   }, []);
 
   return {

@@ -7,6 +7,25 @@ import { semovix } from '../services/mockSemovix';
 import { artifactStore } from './artifactStore';
 import { parseSchedule } from './scheduleParser';
 
+const activeTurnExecutions = new Set<string>();
+const cancelledTurns = new Set<string>();
+
+export function isTurnCancelled(turnId: string): boolean {
+  return cancelledTurns.has(turnId);
+}
+
+export function cancelTurn(turnId: string): boolean {
+  cancelledTurns.add(turnId);
+  activeTurnExecutions.delete(turnId);
+
+  eventHub.publish(turnId, {
+    type: 'turn.failed',
+    turnId,
+    message: '任务已被用户停止',
+  });
+  return true;
+}
+
 let aiClient: GoogleGenAI | null = null;
 function getAI(): GoogleGenAI | null {
   if (!aiClient && process.env.GEMINI_API_KEY) {
@@ -364,6 +383,8 @@ export async function handleDiagnosis(turnId: string, taskId: string) {
   // Step through intermediate states
   for (let i = 0; i < stepsDefinition.length; i++) {
     await sleep(200);
+    if (isTurnCancelled(turnId)) return;
+
     const updatedSteps = stepsDefinition.map((s, idx) => ({
       title: s.title,
       tag: s.tag,
@@ -385,6 +406,7 @@ export async function handleDiagnosis(turnId: string, taskId: string) {
   }
 
   await sleep(150);
+  if (isTurnCancelled(turnId)) return;
 
   // Mark all steps DONE
   eventHub.publish(turnId, {
@@ -403,6 +425,8 @@ export async function handleDiagnosis(turnId: string, taskId: string) {
       },
     },
   });
+
+  if (isTurnCancelled(turnId)) return;
 
   // Run business diagnosis
   const { diagnosis, reportDocument } = await semovix.runDiagnosis({
@@ -823,6 +847,9 @@ export async function runTurn(params: {
   }[];
 }) {
   const { turnId, taskId, text, attachments } = params;
+  cancelledTurns.delete(turnId);
+  activeTurnExecutions.add(turnId);
+
   const task = taskStore.getTaskByTaskId(taskId);
   const context = task?.context || {};
 
@@ -839,99 +866,115 @@ export async function runTurn(params: {
     },
   });
 
+  if (isTurnCancelled(turnId)) {
+    activeTurnExecutions.delete(turnId);
+    return;
+  }
+
   const route =
     ruleGate(text, attachments.length > 0, context) ??
     (await modelRoute(text, context));
 
-  switch (route) {
-    case 'ASK_METRIC':
-      await handleMetricDisambiguation(turnId, taskId);
-      break;
-
-    case 'SCOPE_DRILLDOWN': {
-      const region = text.includes('七宝') ? '七宝镇' : '莘庄镇';
-      await handleMetricQueryExecute(turnId, taskId, context.metricId || 'metric_on_time_rate', {
-        region,
-        scope: region,
-      });
-      break;
-    }
-
-    case 'TREND_QUERY': {
-      await handleMetricQueryExecute(turnId, taskId, context.metricId || 'metric_on_time_rate', {
-        timeRange: '最近四周',
-      });
-      break;
-    }
-
-    case 'COMPARE_QUERY': {
-      await handleMetricQueryExecute(turnId, taskId, context.metricId || 'metric_on_time_rate', {
-        compareType: 'yoy',
-      });
-      break;
-    }
-
-    case 'SWITCH_METRIC': {
-      await handleMetricQueryExecute(turnId, taskId, 'metric_total_completion_rate');
-      break;
-    }
-
-    case 'ANALYZE_CAUSE':
-      await handleDiagnosis(turnId, taskId);
-      break;
-
-    case 'FILE_ANALYSIS':
-      await handleFileAnalysis(turnId, taskId, attachments);
-      break;
-
-    case 'CREATE_SCHEDULE':
-      await handleSchedulePlan(turnId, taskId, text);
-      break;
-
-    case 'SHARE':
-      eventHub.publish(turnId, {
-        type: 'task.updated',
-        patch: {
-          stage: 'SHARE',
-          status: 'WAITING_USER',
-        },
-      });
-      eventHub.publish(turnId, {
-        type: 'block.created',
-        turnId,
-        block: {
-          blockId: `blk_${crypto.randomUUID().substring(0, 8)}`,
-          type: 'share_selection',
-          status: 'PENDING',
-          payload: {
-            title: '选择需要分享的分析内容',
-          },
-          createdAt: new Date().toISOString(),
-        },
-      });
-      break;
-
-    default: {
-      eventHub.publish(turnId, {
-        type: 'block.created',
-        turnId,
-        block: {
-          blockId: `blk_${crypto.randomUUID().substring(0, 8)}`,
-          type: 'assistant_message',
-          status: 'DONE',
-          payload: {
-            text:
-              '我已收到您的提问。您可以问我“上周公共服务热线工单按期办结率如何？”、“为什么下降了？”、“只看七宝镇”、上传重点工单清单 CSV，或让我“每周五下午3点帮我做一次这个分析”。',
-          },
-          createdAt: new Date().toISOString(),
-        },
-      });
-      break;
-    }
+  if (isTurnCancelled(turnId)) {
+    activeTurnExecutions.delete(turnId);
+    return;
   }
 
-  eventHub.publish(turnId, {
-    type: 'turn.completed',
-    turnId,
-  });
+  try {
+    switch (route) {
+      case 'ASK_METRIC':
+        await handleMetricDisambiguation(turnId, taskId);
+        break;
+
+      case 'SCOPE_DRILLDOWN': {
+        const region = text.includes('七宝') ? '七宝镇' : '莘庄镇';
+        await handleMetricQueryExecute(turnId, taskId, context.metricId || 'metric_on_time_rate', {
+          region,
+          scope: region,
+        });
+        break;
+      }
+
+      case 'TREND_QUERY': {
+        await handleMetricQueryExecute(turnId, taskId, context.metricId || 'metric_on_time_rate', {
+          timeRange: '最近四周',
+        });
+        break;
+      }
+
+      case 'COMPARE_QUERY': {
+        await handleMetricQueryExecute(turnId, taskId, context.metricId || 'metric_on_time_rate', {
+          compareType: 'yoy',
+        });
+        break;
+      }
+
+      case 'SWITCH_METRIC': {
+        await handleMetricQueryExecute(turnId, taskId, 'metric_total_completion_rate');
+        break;
+      }
+
+      case 'ANALYZE_CAUSE':
+        await handleDiagnosis(turnId, taskId);
+        break;
+
+      case 'FILE_ANALYSIS':
+        await handleFileAnalysis(turnId, taskId, attachments);
+        break;
+
+      case 'CREATE_SCHEDULE':
+        await handleSchedulePlan(turnId, taskId, text);
+        break;
+
+      case 'SHARE':
+        eventHub.publish(turnId, {
+          type: 'task.updated',
+          patch: {
+            stage: 'SHARE',
+            status: 'WAITING_USER',
+          },
+        });
+        eventHub.publish(turnId, {
+          type: 'block.created',
+          turnId,
+          block: {
+            blockId: `blk_${crypto.randomUUID().substring(0, 8)}`,
+            type: 'share_selection',
+            status: 'PENDING',
+            payload: {
+              title: '选择需要分享的分析内容',
+            },
+            createdAt: new Date().toISOString(),
+          },
+        });
+        break;
+
+      default: {
+        eventHub.publish(turnId, {
+          type: 'block.created',
+          turnId,
+          block: {
+            blockId: `blk_${crypto.randomUUID().substring(0, 8)}`,
+            type: 'assistant_message',
+            status: 'DONE',
+            payload: {
+              text:
+                '我已收到您的提问。您可以问我“上周公共服务热线工单按期办结率如何？”、“为什么下降了？”、“只看七宝镇”、上传重点工单清单 CSV，或让我“每周五下午3点帮我做一次这个分析”。',
+            },
+            createdAt: new Date().toISOString(),
+          },
+        });
+        break;
+      }
+    }
+
+    if (!isTurnCancelled(turnId)) {
+      eventHub.publish(turnId, {
+        type: 'turn.completed',
+        turnId,
+      });
+    }
+  } finally {
+    activeTurnExecutions.delete(turnId);
+  }
 }
