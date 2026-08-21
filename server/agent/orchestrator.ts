@@ -666,9 +666,16 @@ export async function handleSchedulePlan(
 
   const parsed = parseSchedule(userText, metric, region);
 
+  const schedulePlanBlockId = `blk_${crypto.randomUUID().substring(0, 8)}`;
+
   // Store parsed draft schedule in task context
   taskStore.updateTaskContext(taskId, {
     scheduleDraft: parsed,
+    pendingDecision: {
+      type: 'SCHEDULE_PLAN',
+      turnId,
+      blockId: schedulePlanBlockId,
+    },
   });
 
   eventHub.publish(turnId, {
@@ -678,6 +685,11 @@ export async function handleSchedulePlan(
       status: 'WAITING_USER',
       context: {
         scheduleDraft: parsed,
+        pendingDecision: {
+          type: 'SCHEDULE_PLAN',
+          turnId,
+          blockId: schedulePlanBlockId,
+        },
       },
     },
   });
@@ -704,7 +716,7 @@ export async function handleSchedulePlan(
     type: 'decision.required',
     turnId,
     block: {
-      blockId: `blk_${crypto.randomUUID().substring(0, 8)}`,
+      blockId: schedulePlanBlockId,
       type: 'schedule_plan',
       status: 'PENDING',
       payload: {
@@ -735,6 +747,26 @@ export async function handleScheduleConfirmAction(
 ) {
   const task = taskStore.getTaskByTaskId(taskId);
   const draft = task?.context?.scheduleDraft;
+
+  // If there was a pending schedule plan decision block, resolve it to DONE
+  const pending = task?.context?.pendingDecision;
+  if (pending?.type === 'SCHEDULE_PLAN' && pending.blockId && pending.turnId) {
+    const existingBlock = taskStore.getBlock(taskId, pending.turnId, pending.blockId);
+    if (existingBlock) {
+      eventHub.publish(pending.turnId, {
+        type: 'block.updated',
+        turnId: pending.turnId,
+        blockId: pending.blockId,
+        patch: {
+          status: 'DONE',
+          payload: {
+            ...existingBlock.payload,
+            resolutionStatus: 'RESOLVED',
+          },
+        },
+      });
+    }
+  }
 
   const scheduleParams = {
     taskName: payload?.taskName || draft?.taskName || `${task?.context?.region || '上海市闵行区'}公共服务热线${task?.context?.metricName || '按期办结率'}周度监测与归因`,

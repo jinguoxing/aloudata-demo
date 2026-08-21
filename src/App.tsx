@@ -11,6 +11,7 @@ import { AgentThread } from './components/agent/AgentThread';
 import { useAgentTask } from './agent/useAgentTask';
 import { ShareArtifact } from './agent/contracts';
 import { AlertCircle, ArrowLeft } from 'lucide-react';
+import { safePushState } from './utils/safeBrowser';
 
 // Keyframe legacy pages for presenter inspection
 import { Page01Ask } from './components/pages/Page01Ask';
@@ -23,9 +24,11 @@ import { Page07ShareSelect } from './components/pages/Page07ShareSelect';
 import { Page08ReadOnly } from './components/pages/Page08ReadOnly';
 
 export default function App() {
+  const demoMode = (import.meta as any).env?.VITE_DEMO_MODE === 'true';
+
   const [currentPage, setCurrentPage] = useState<PageState>('page01');
   const [viewMode, setViewMode] = useState<'continuous' | 'keyframes'>('continuous');
-  const [showPresenterControl, setShowPresenterControl] = useState(true);
+  const [showPresenterControl, setShowPresenterControl] = useState(demoMode);
   const [activeRightPanel, setActiveRightPanel] = useState<'metric' | 'python' | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -43,7 +46,7 @@ export default function App() {
   });
   const [directShareArtifact, setDirectShareArtifact] = useState<ShareArtifact | null>(null);
   const [shareLoadError, setShareLoadError] = useState<string | null>(null);
-  const [shareLoading, setShareLoading] = useState<boolean>(false);
+  const [, setShareLoading] = useState<boolean>(false);
 
   // Real Agent Task Runtime Hook
   const {
@@ -53,6 +56,7 @@ export default function App() {
     activeShareArtifact,
     activeMetricDefinition,
     sendMessage,
+    stopGenerating,
     selectMetric,
     confirmSchedule,
     createShare,
@@ -142,7 +146,7 @@ export default function App() {
           </p>
           <button
             onClick={() => {
-              window.history.pushState(null, '', '/');
+              safePushState('/');
               setDirectShareId(null);
               setShareLoadError(null);
               setCurrentPage('page01');
@@ -159,8 +163,8 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 font-sans text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900">
-      {/* Presenter Keyframe Control Bar */}
-      {showPresenterControl && (
+      {/* Presenter Keyframe Control Bar - only in Demo Mode */}
+      {demoMode && showPresenterControl && (
         <PresenterControl
           currentPage={currentPage}
           onNavigate={(page) => {
@@ -173,12 +177,17 @@ export default function App() {
 
       {/* Main Unified Header */}
       <Header
+        task={task}
+        demoMode={demoMode}
         currentPage={currentPage}
         onNavigate={(page) => {
           if (page === 'page01') {
             resetSession();
           }
           handleNavigateTo(page);
+        }}
+        onShare={() => {
+          sendMessage('生成精选分析分享链接');
         }}
         showPresenterControl={showPresenterControl}
         setShowPresenterControl={setShowPresenterControl}
@@ -213,7 +222,7 @@ export default function App() {
                 loading={loading}
                 onSelectMetric={(metricId) => {
                   selectMetric(metricId);
-                  setActiveRightPanel('metric');
+                  if (demoMode) setActiveRightPanel('metric');
                 }}
                 onOpenMetricContext={() => setActiveRightPanel('metric')}
                 onFollowUpDiagnosis={() =>
@@ -264,11 +273,13 @@ export default function App() {
 
               {/* Bottom Composer */}
               <Composer
-                stage={task.stage}
+                task={task}
                 loading={loading}
+                demoMode={demoMode}
                 onSend={async (text, files) => {
                   await sendMessage(text, files);
                 }}
+                onStop={stopGenerating}
               />
             </div>
           ) : (
@@ -344,7 +355,7 @@ export default function App() {
                   }}
                   onReturnToWorkbench={() => {
                     if (directShareId) {
-                      window.history.pushState(null, '', '/');
+                      safePushState('/');
                       setDirectShareId(null);
                     }
                     handleNavigateTo('page06');

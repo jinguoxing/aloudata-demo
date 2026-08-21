@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Share2, Check, ExternalLink, Copy, CheckCheck, BarChart2, Layers, FileText, Calendar } from 'lucide-react';
 import { AgentBlock } from '../../../agent/contracts';
 import { convertBlocksToSelectable } from '../../../agent/utils/shareUtils';
+import { safeCopyText } from '../../../utils/safeBrowser';
 
 interface Props {
   availableBlocks?: AgentBlock[];
@@ -54,8 +55,9 @@ export const ShareSelectionBlock: React.FC<Props> = ({
     }
   };
 
-  const copyLink = () => {
-    navigator.clipboard?.writeText(window.location.origin + (createdUrl || ''));
+  const copyLink = async () => {
+    const fullLink = (typeof window !== 'undefined' ? window.location.origin : '') + (createdUrl || '');
+    await safeCopyText(fullLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

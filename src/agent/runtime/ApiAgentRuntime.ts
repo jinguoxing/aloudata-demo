@@ -15,16 +15,14 @@ function toAbsoluteUrl(url: string): string {
   }
   if (typeof window !== 'undefined' && window.location) {
     try {
-      return new URL(url, window.location.href).href;
-    } catch {
-      try {
-        const origin = window.location.origin;
-        if (origin && origin !== 'null') {
-          return `${origin.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
-        }
-      } catch {
-        // ignore
+      const origin = window.location.origin;
+      if (origin && origin !== 'null' && (origin.startsWith('http://') || origin.startsWith('https://'))) {
+        const cleanOrigin = origin.replace(/\/+$/, '');
+        const cleanPath = url.replace(/^\/+/, '');
+        return `${cleanOrigin}/${cleanPath}`;
       }
+    } catch {
+      // ignore
     }
   }
   return url;
@@ -159,40 +157,47 @@ export class ApiAgentRuntime {
         }, 250);
       };
 
-      // Try EventSource with absolute URL
+      // Try EventSource with absolute URL, or fallback to polling mechanism
       try {
         const fullUrl = toAbsoluteUrl(params.streamUrl);
-        source = new EventSource(fullUrl);
+        const isValidHttp = fullUrl && (fullUrl.startsWith('http://') || fullUrl.startsWith('https://'));
 
-        source.onmessage = (message) => {
-          try {
-            const event = JSON.parse(message.data) as AgentEvent;
-            seenEventCount++;
-            params.onEvent(event);
+        if (typeof EventSource !== 'undefined' && isValidHttp) {
+          source = new EventSource(fullUrl);
 
-            if (event.type === 'turn.completed') {
-              finishSuccess();
-            } else if (event.type === 'turn.failed') {
-              finishError(new Error(event.message || 'Turn execution failed'));
-            }
-          } catch (err) {
-            console.error('Failed to parse SSE message:', err);
-          }
-        };
-
-        source.onerror = (err) => {
-          if (source) {
+          source.onmessage = (message) => {
             try {
-              source.close();
-            } catch {
-              // ignore
+              const event = JSON.parse(message.data) as AgentEvent;
+              seenEventCount++;
+              params.onEvent(event);
+
+              if (event.type === 'turn.completed') {
+                finishSuccess();
+              } else if (event.type === 'turn.failed') {
+                finishError(new Error(event.message || 'Turn execution failed'));
+              }
+            } catch (err) {
+              console.error('Failed to parse SSE message:', err);
             }
-          }
-          // Start polling fallback if not settled
-          if (!isSettled) {
-            startPolling();
-          }
-        };
+          };
+
+          source.onerror = () => {
+            if (source) {
+              try {
+                source.close();
+              } catch {
+                // ignore
+              }
+            }
+            // Start polling fallback if not settled
+            if (!isSettled) {
+              startPolling();
+            }
+          };
+        } else {
+          // If EventSource is unsupported or url is not absolute, poll directly
+          startPolling();
+        }
       } catch (err) {
         console.warn('EventSource initialization error, using polling fallback:', err);
         startPolling();

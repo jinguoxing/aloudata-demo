@@ -13,7 +13,18 @@ export const MetricDisambiguationBlock: React.FC<Props> = ({
   onSelectMetric,
   disabled = false,
 }) => {
-  const { title, candidates, recommendedMetricId, selectedMetricId } = payload;
+  const { title, candidates, recommendedMetricId, selectedMetricId, resolutionStatus } = payload;
+
+  if (resolutionStatus === 'RESOLVED' && selectedMetricId) {
+    const selected = candidates.find((c) => c.id === selectedMetricId);
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200/80 px-3.5 py-2.5 text-xs text-slate-600 shadow-2xs">
+        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+        <span>已使用正式指标口径：</span>
+        <strong className="font-semibold text-slate-900">{selected?.name || selectedMetricId}</strong>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4">

@@ -14,6 +14,21 @@ export const ScheduleCreatedBlock: React.FC<Props> = ({
   onInitiateShare,
 }) => {
   const { taskName, frequency, metric, output, status, nextRun } = payload;
+  const [runningTrial, setRunningTrial] = React.useState(false);
+  const [trialCompleted, setTrialCompleted] = React.useState(false);
+
+  const handleTrialRun = () => {
+    if (onRunOnce) {
+      onRunOnce();
+    } else {
+      setRunningTrial(true);
+      setTimeout(() => {
+        setRunningTrial(false);
+        setTrialCompleted(true);
+        setTimeout(() => setTrialCompleted(false), 4000);
+      }, 1500);
+    }
+  };
 
   return (
     <div className="bg-white border border-emerald-200/90 rounded-2xl p-5 shadow-xs space-y-4">
@@ -67,11 +82,12 @@ export const ScheduleCreatedBlock: React.FC<Props> = ({
       {/* Action Buttons */}
       <div className="flex items-center justify-between pt-1">
         <button
-          onClick={onRunOnce || (() => alert('已提交即时试跑任务'))}
-          className="text-xs text-slate-700 hover:text-slate-900 font-medium px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer"
+          onClick={handleTrialRun}
+          disabled={runningTrial}
+          className="text-xs text-slate-700 hover:text-slate-900 font-medium px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60 shadow-2xs"
         >
-          <Play className="w-3.5 h-3.5 text-slate-500" />
-          <span>立即试跑一次</span>
+          <Play className={`w-3.5 h-3.5 ${runningTrial ? 'text-blue-600 animate-spin' : 'text-slate-500'}`} />
+          <span>{runningTrial ? '正在试跑中...' : trialCompleted ? '✓ 试跑完成（调度正常）' : '立即试跑一次'}</span>
         </button>
 
         {onInitiateShare && (

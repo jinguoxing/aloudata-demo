@@ -190,8 +190,14 @@ export function useAgentTask() {
     async (action: TaskAction) => {
       setLoading(true);
       try {
+        let currentTaskId = taskRef.current.taskId;
+        if (!currentTaskId || !taskRef.current.sessionId) {
+          await initSession();
+          currentTaskId = taskRef.current.taskId;
+        }
+
         const result = await apiAgentRuntime.performAction({
-          taskId: taskRef.current.taskId,
+          taskId: currentTaskId,
           action,
           onEvent: handleEvent,
         });
@@ -208,7 +214,7 @@ export function useAgentTask() {
         setLoading(false);
       }
     },
-    [handleEvent],
+    [handleEvent, initSession],
   );
 
   // Quick action helpers
@@ -283,6 +289,10 @@ export function useAgentTask() {
     }
   }, []);
 
+  const stopGenerating = useCallback(() => {
+    setLoading(false);
+  }, []);
+
   return {
     task,
     loading,
@@ -296,6 +306,7 @@ export function useAgentTask() {
     externalShareLoading,
     shareLoadError,
     sendMessage,
+    stopGenerating,
     performAction,
     selectMetric,
     confirmSchedule,

@@ -4,18 +4,32 @@ import { Calendar, Clock, MapPin, CheckCircle2, ArrowRight, AlertCircle } from '
 
 interface Props {
   payload: SchedulePlanPayload;
+  status?: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
   onConfirmSchedule: () => void;
   disabled?: boolean;
 }
 
 export const SchedulePlanBlock: React.FC<Props> = ({
   payload,
+  status,
   onConfirmSchedule,
   disabled = false,
 }) => {
   const { taskName, frequency, region, metric, steps, missingSlots } = payload;
+  const isDone = status === 'DONE';
   const hasMissingSlots = missingSlots && missingSlots.length > 0;
-  const canConfirm = !hasMissingSlots && !disabled;
+  const canConfirm = !hasMissingSlots && !disabled && !isDone;
+
+  if (isDone) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200/80 px-3.5 py-2.5 text-xs text-slate-600 shadow-2xs">
+        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+        <span>已确认创建周期任务：</span>
+        <strong className="font-semibold text-slate-900">{taskName || '公共服务热线周度监测'}</strong>
+        <span className="text-slate-400">（{frequency || '每周'}）</span>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4">

@@ -91,6 +91,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       return (
         <SchedulePlanBlock
           payload={block.payload}
+          status={block.status}
           onConfirmSchedule={onConfirmSchedule || (() => {})}
         />
       );

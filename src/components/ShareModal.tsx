@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Check, Copy, ExternalLink, ShieldCheck, Link2 } from 'lucide-react';
+import { safeCopyText } from '../utils/safeBrowser';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -25,8 +26,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(shareUrl);
+  const handleCopy = async () => {
+    await safeCopyText(shareUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

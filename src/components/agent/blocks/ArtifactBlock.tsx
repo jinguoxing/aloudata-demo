@@ -43,11 +43,32 @@ export const ArtifactBlock: React.FC<Props> = ({ payload, onOpenReport }) => {
         )}
 
         <button
-          onClick={() => alert('报告文件已准备好下载')}
-          className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium px-3 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+          onClick={async () => {
+            try {
+              const res = await fetch(`/api/v1/artifacts/${artifactId}`);
+              if (res.ok) {
+                const doc = await res.json();
+                const htmlContent = doc.content || `<!DOCTYPE html><html><head><title>${title}</title></head><body><h1>${title}</h1><p>${description}</p></body></html>`;
+                const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${title || 'report'}.html`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              } else {
+                onOpenReport?.(artifactId);
+              }
+            } catch {
+              onOpenReport?.(artifactId);
+            }
+          }}
+          className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-medium px-3 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
           title="下载离线 HTML 报告"
         >
-          <Download className="w-3.5 h-3.5" />
+          <Download className="w-3.5 h-3.5 text-slate-500" />
           <span className="hidden sm:inline">下载</span>
         </button>
       </div>
