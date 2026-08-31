@@ -116,6 +116,13 @@ export function applyAgentEvent(
       };
     }
 
+    case 'turn.cancelled': {
+      return {
+        ...state,
+        status: 'OPEN',
+      };
+    }
+
     case 'turn.failed': {
       return {
         ...state,

@@ -175,7 +175,7 @@ export class ApiAgentRuntime {
                 seenEventCount = events.length;
                 for (const ev of newEvents) {
                   params.onEvent(ev);
-                  if (ev.type === 'turn.completed') {
+                  if (ev.type === 'turn.completed' || ev.type === 'turn.cancelled') {
                     finishSuccess();
                     return;
                   }
@@ -211,7 +211,7 @@ export class ApiAgentRuntime {
               seenEventCount++;
               params.onEvent(event);
 
-              if (event.type === 'turn.completed') {
+              if (event.type === 'turn.completed' || event.type === 'turn.cancelled') {
                 finishSuccess();
               } else if (event.type === 'turn.failed') {
                 finishError(new Error(event.message || 'Turn execution failed'));

@@ -153,6 +153,10 @@ export type AgentEvent =
       turnId: string;
     }
   | {
+      type: 'turn.cancelled';
+      turnId: string;
+    }
+  | {
       type: 'turn.failed';
       turnId: string;
       message: string;

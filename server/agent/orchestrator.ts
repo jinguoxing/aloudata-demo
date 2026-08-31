@@ -19,9 +19,8 @@ export function cancelTurn(turnId: string): boolean {
   activeTurnExecutions.delete(turnId);
 
   eventHub.publish(turnId, {
-    type: 'turn.failed',
+    type: 'turn.cancelled',
     turnId,
-    message: '任务已被用户停止',
   });
   return true;
 }

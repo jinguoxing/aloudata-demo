@@ -11,6 +11,7 @@ import {
   Calendar,
   Sparkles,
   Link2,
+  AlertCircle,
 } from 'lucide-react';
 
 interface ShareSelectionModalProps {
@@ -30,17 +31,20 @@ export const ShareSelectionModal: React.FC<ShareSelectionModalProps> = ({
 }) => {
   const [blocks, setBlocks] = useState<any[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       const { items } = convertBlocksToSelectable(availableBlocks);
       setBlocks(items);
+      setErrorMessage(null);
     }
   }, [isOpen, availableBlocks]);
 
   if (!isOpen) return null;
 
   const toggleBlock = (id: string) => {
+    setErrorMessage(null);
     setBlocks((prev) =>
       prev.map((b) => (b.id === id ? { ...b, selected: !b.selected } : b)),
     );
@@ -51,17 +55,19 @@ export const ShareSelectionModal: React.FC<ShareSelectionModalProps> = ({
   const handleGenerate = async () => {
     if (selectedCount === 0) return;
     setIsGenerating(true);
+    setErrorMessage(null);
     try {
       const selectedIds = blocks.filter((b) => b.selected).map((b) => b.id);
       const shareResult = await onCreateShare(selectedIds, availableBlocks);
-      const fullUrl =
-        shareResult?.url
-          ? `${window.location.origin}${shareResult.url}`
-          : `${window.location.origin}/share/s_${Math.random().toString(36).substring(2, 10)}`;
+      if (!shareResult?.url) {
+        throw new Error('未生成有效的分享链接');
+      }
+      const fullUrl = `${window.location.origin}${shareResult.url}`;
       onClose();
       onShareCreated(fullUrl, selectedCount);
     } catch (err) {
       console.error('Failed to create share artifact:', err);
+      setErrorMessage('分享创建失败，请重试。');
     } finally {
       setIsGenerating(false);
     }
@@ -111,6 +117,14 @@ export const ShareSelectionModal: React.FC<ShareSelectionModalProps> = ({
             已选择 <strong>{selectedCount}</strong> 项内容。接收方将进入受控只读视图。
           </span>
         </div>
+
+        {/* Error message banner */}
+        {errorMessage && (
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2.5 shrink-0 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span className="font-medium">{errorMessage}</span>
+          </div>
+        )}
 
         {/* Selectable Items List */}
         <div className="p-4 space-y-2.5 overflow-y-auto flex-1 text-xs">

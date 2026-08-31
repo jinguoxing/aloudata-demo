@@ -18,13 +18,9 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   onOpenReadOnlyView,
 }) => {
   const [copied, setCopied] = useState(false);
-  const shareUrl =
-    customShareUrl ||
-    (typeof window !== 'undefined'
-      ? `${window.location.origin}/share/s_8f3a9d2c91e4`
-      : 'https://semovix.ai/share/s_8f3a9d2c91e4');
+  const shareUrl = customShareUrl || '';
 
-  if (!isOpen) return null;
+  if (!isOpen || !shareUrl) return null;
 
   const handleCopy = async () => {
     await safeCopyText(shareUrl);

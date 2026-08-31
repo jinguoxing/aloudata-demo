@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Share2, Check, ExternalLink, Copy, CheckCheck, BarChart2, Layers, FileText, Calendar } from 'lucide-react';
+import { Share2, Check, ExternalLink, Copy, CheckCheck, BarChart2, Layers, FileText, Calendar, AlertCircle } from 'lucide-react';
 import { AgentBlock } from '../../../agent/contracts';
 import { convertBlocksToSelectable } from '../../../agent/utils/shareUtils';
 import { safeCopyText } from '../../../utils/safeBrowser';
@@ -23,8 +23,10 @@ export const ShareSelectionBlock: React.FC<Props> = ({
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const toggleItem = (id: string) => {
+    setErrorMessage(null);
     setItems((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, selected: !item.selected } : item,
@@ -34,6 +36,7 @@ export const ShareSelectionBlock: React.FC<Props> = ({
 
   const handleGenerate = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const selected = items.filter((i) => i.selected);
       const selectedIds = selected.map((i) => i.id);
@@ -42,14 +45,13 @@ export const ShareSelectionBlock: React.FC<Props> = ({
         .filter((b): b is AgentBlock => !!b);
 
       const res = await onCreateShare(selectedIds, selectedBlocks);
-      if (res?.url) {
-        setCreatedUrl(res.url);
-      } else {
-        setCreatedUrl(`/share/demo_${Date.now().toString(36)}`);
+      if (!res?.url) {
+        throw new Error('未生成有效的分享链接');
       }
+      setCreatedUrl(res.url);
     } catch (err) {
       console.error(err);
-      setCreatedUrl(`/share/demo_${Date.now().toString(36)}`);
+      setErrorMessage('分享创建失败，请重试。');
     } finally {
       setLoading(false);
     }
@@ -135,6 +137,14 @@ export const ShareSelectionBlock: React.FC<Props> = ({
           </div>
         ))}
       </div>
+
+      {/* Error message banner */}
+      {errorMessage && (
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2 animate-in fade-in">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span className="font-medium">{errorMessage}</span>
+        </div>
+      )}
 
       {/* Created Link or Generate Button */}
       {createdUrl ? (
